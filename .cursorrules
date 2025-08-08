@@ -1,0 +1,125 @@
+# Income Tax AI Assistant - Cursor Rules
+
+## Project Overview
+Building an AI-powered Income Tax Filing Assistant for India using LlamaIndex and GPT-OSS-20B model.
+User documents are located in Desktop/Income Tax 2024-2025.
+
+## Architecture Decisions
+
+### Core Components:
+1. **Document Processing Layer**: Process Indian tax documents (Form 16, 16A, bank statements, investment proofs)
+2. **Knowledge Base**: Indian tax laws, ITR forms, deduction rules, tax slabs for FY 2024-25
+3. **Tax Calculation Engine**: Support both new and old tax regimes with all Indian deductions
+4. **LLM Integration**: GPT-OSS-20B with RAG for natural language tax queries
+5. **ITR Form Assistant**: Help with ITR-1 (Sahaj), ITR-2, ITR-3, ITR-4 form filling
+6. **Streamlit UI**: User-friendly interface for document upload, calculations, and chat
+
+### Technology Stack:
+- **LLM**: GPT-OSS-20B (openai/gpt-oss-20b) via HuggingFace Transformers
+- **RAG Framework**: LlamaIndex for document indexing and retrieval
+- **Vector DB**: ChromaDB for knowledge base storage
+- **Embeddings**: sentence-transformers/all-MiniLM-L6-v2
+- **UI**: Streamlit with streamlit-chat
+- **Document Processing**: PyPDF, pdfplumber, pandas for Excel files
+
+### Indian Tax Specific Features:
+- **Tax Regimes**: Both new (Section 115BAC) and old regime calculations
+- **Deductions**: Section 80C, 80D, 80G, HRA, LTA, etc.
+- **Forms**: ITR-1 (Sahaj), ITR-2, ITR-3, ITR-4 support
+- **Documents**: Form 16, 16A, TDS certificates, investment proofs
+- **Validation**: Tax law compliance and form completeness checks
+
+### Project Structure:
+```
+IncomeTax.ai/
+├── src/
+│   ├── core/           # Core tax calculation logic
+│   ├── models/         # LLM and embedding models
+│   ├── data/           # Document processing
+│   └── ui/             # Streamlit interface
+├── data/
+│   ├── tax_documents/  # Tax knowledge base documents
+│   └── knowledge_base/ # Vector database storage
+├── config/             # Configuration files
+└── tests/              # Unit tests
+```
+
+### Key Features to Implement:
+1. Connect to user's Desktop/Income Tax 2024-2025 folder
+2. Process multiple document types (PDF, Excel, images)
+3. Extract structured data from Form 16, bank statements
+4. Calculate tax liability (both regimes)
+5. Suggest optimal tax regime
+6. Generate ITR forms with pre-filled data
+7. Provide tax advice through chat interface
+8. Validate calculations and forms
+9. **Missing Document Detection**: Comprehensive checklist system
+10. **Google Drive Integration**: Fetch documents from cloud storage
+11. **Multi-Source Document Fetching**: Local + Google Drive + manual upload
+12. **Smart Document Classification**: Auto-detect document types
+13. **Tax Saving Recommendations**: Based on missing documents
+14. **🛡️ Tax-Only Behavior**: Professional boundaries with 100% accuracy filtering
+15. **🤖 Advanced AI Integration**: GPT-OSS-20B + LlamaIndex RAG system
+
+### Model Configuration:
+- Model: openai/gpt-oss-20b
+- Reasoning Level: medium (configurable)
+- Temperature: 0.1 for consistent tax calculations
+- Max Tokens: 512 for detailed responses
+
+### Current Tax Information (Based on Latest Research):
+#### **FY 2024-25 (AY 2025-26) Key Updates:**
+- **Filing Deadline Extended**: September 15, 2025 (from July 31, 2025)
+- **New Tax Regime is Default**: Users must explicitly opt-out for old regime via Form 10-IEA
+- **ITR Form Changes**: ITR-1 and ITR-4 now support LTCG up to ₹1.25 lakh
+- **Enhanced TDS Reporting**: New sections for TDS classification
+- **Digital Initiatives**: AIS/TIS integration, pre-filled returns
+
+#### **Tax Slabs FY 2024-25:**
+**New Regime (Default):**
+- Up to ₹3 lakh: 0%
+- ₹3-7 lakh: 5%
+- ₹7-10 lakh: 10%
+- ₹10-12 lakh: 15%
+- ₹12-15 lakh: 20%
+- Above ₹15 lakh: 30%
+
+**Old Regime:**
+- Up to ₹2.5 lakh: 0%
+- ₹2.5-5 lakh: 5%
+- ₹5-10 lakh: 20%
+- Above ₹10 lakh: 30%
+
+#### **Key Deductions & Exemptions:**
+- **Section 80C**: ₹1.5 lakh (EPF, PPF, ELSS, LIC, Home loan principal)
+- **Section 80D**: ₹25,000 (₹50,000 for parents) for health insurance
+- **Section 24(b)**: ₹2 lakh for home loan interest
+- **HRA**: House Rent Allowance exemption (old regime only)
+- **Standard Deduction**: ₹75,000 (new regime), ₹50,000 (old regime)
+
+#### **Required Documents:**
+1. **Mandatory**: PAN, Aadhaar, Form 16, Form 26AS, AIS/TIS
+2. **Income Sources**: Bank statements, interest certificates, capital gains statements
+3. **Investments**: LIC receipts, ELSS statements, PPF/EPF statements
+4. **Property**: Home loan certificates, rent receipts
+5. **Others**: Health insurance premiums, charitable donations
+
+#### **Digital Process:**
+- **e-Filing Portal**: https://www.incometax.gov.in/iec/foportal/
+- **Pre-filled Returns**: Auto-population from AIS/TIS
+- **e-Verification**: Aadhaar OTP, Net Banking, Bank EVC
+- **Form 26AS**: Tax passbook showing TDS/TCS credits
+
+## Development Guidelines:
+- Follow Indian tax year (April-March) conventions
+- Ensure accuracy in tax calculations based on FY 2024-25 rules
+- Support both new and old tax regime calculations
+- Handle multiple income sources (salary, business, capital gains)
+- Integrate document processing for Form 16, bank statements, investment proofs
+- Support Google Drive integration for document fetching
+- Implement missing document detection with tax-saving recommendations
+- Maintain data privacy and security
+- Provide clear explanations for tax decisions and regime comparisons
+
+## Remember:
+This assistant must be highly accurate for Indian tax calculations and compliant with current Indian tax laws and ITR form requirements for FY 2024-25 (AY 2025-26). Always validate against latest government notifications and circulars.

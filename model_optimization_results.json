@@ -1,0 +1,76 @@
+{
+  "test_date": "2025-08-07 08:03:28",
+  "form16_path": "/Users/rishabh.roy/Desktop/Income Tax 2024-2025/Form16.pdf",
+  "results": {
+    "ollama": {
+      "name": "Ollama LLM",
+      "time": 28.65100383758545,
+      "result": {
+        "document_type": "form_16",
+        "confidence": 0.9,
+        "employee_name": "Rishabh Roy",
+        "pan": "BYHPR6078P",
+        "employer_name": "SALESFORCE.COM INDIA PRIVATE LIMITED",
+        "gross_salary": 5261194.0,
+        "basic_salary": 4958800.0,
+        "perquisites": 302394.0,
+        "total_gross_salary": 5261194.0,
+        "hra_received": 0.0,
+        "special_allowance": 0.0,
+        "other_allowances": 0.0,
+        "tax_deducted": 1374146.0,
+        "bank_name": null,
+        "account_number": null,
+        "interest_amount": 0.0,
+        "tds_amount": 0.0,
+        "financial_year": null,
+        "total_capital_gains": 0.0,
+        "long_term_capital_gains": 0.0,
+        "short_term_capital_gains": 0.0,
+        "number_of_transactions": 0,
+        "epf_amount": 0.0,
+        "ppf_amount": 0.0,
+        "life_insurance": 0.0,
+        "elss_amount": 0.0,
+        "health_insurance": 0.0,
+        "raw_text": "Form 16\nAssessment Year\n:\n2025-26\nFinancial Year\n:\n2024-25\nEmployee ID\n:\n870937\nEmployee Name\n:\nRISHABH ROY\nEmployee PAN\n:\nBYHPR6078P\nEmployee Designation\n:\nSoftware Engineering SMTS\nEmployer Name\n:\nSALESFORCE.COM INDIA PRIVATE LIMITED\nEmployer TAN\n:\nBLRS20885E\nWhat is Form-16?\nForm 16 is a certificate of tax deduction at source issued by the employers to\ntheir employees specifying the tax deducted, the salary income and its breakup,\nthe investment details of the employees, etc. \nDigitally signed by SARITA\nSACHDEV\nDate: 2025.06.20 16:56:31\nIST\nSignature Not Verified\nFORM NO. 16\n[See rule 31(1)(a)]\nCertificate under Section 203 of the Income-tax Act, 1961 for tax deducted at source on salary paid to an employee under section 192 or pension/interest income\nof specified senior citizen under section 194P\nName and address of the Employer/Specified Bank\nSALESFORCE.COM INDIA PRIVATE LIMITED\nTorrey Pines, 3rd Floor, Embassy Golflinks Software Business Park\nDomlur S.O Bangalore North,\nBengaluru",
+        "extraction_method": "ollama_llm_full_analysis",
+        "errors": []
+      },
+      "success": true,
+      "optimizations": []
+    },
+    "donut": {
+      "name": "Donut Model",
+      "time": 0,
+      "error": "cannot identify image file '/Users/rishabh.roy/Desktop/Income Tax 2024-2025/Form16.pdf'",
+      "success": false,
+      "optimizations": []
+    },
+    "qwen_vl": {
+      "name": "Qwen 2.5 VL 3B",
+      "time": 0,
+      "error": "cannot identify image file '/Users/rishabh.roy/Desktop/Income Tax 2024-2025/Form16.pdf'",
+      "success": false,
+      "optimizations": []
+    },
+    "monkey_ocr": {
+      "name": "MonkeyOCR-MLX",
+      "time": 0,
+      "error": "MLX not available",
+      "success": false,
+      "optimizations": []
+    }
+  },
+  "optimizations": {
+    "ollama": [
+      "Implement result caching",
+      "Parallelize quarterly data extraction"
+    ]
+  },
+  "summary": {
+    "total_models": 4,
+    "successful": 1,
+    "failed": 3
+  }
+}
