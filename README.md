@@ -1,78 +1,107 @@
-# 🇮🇳 Income Tax AI Assistant - Complete AI Solution
+# 🇮🇳 Income Tax AI Assistant (FY 2024-25)
 
-An intelligent AI-powered assistant for Indian income tax filing using **GPT-OSS-20B**, **LlamaIndex RAG**, and **advanced document recognition**. This comprehensive system provides conversational tax advice, automatic document analysis, and personalized filing recommendations.
+AI-powered assistant for Indian income tax filing using **GPT-OSS-20B**, **LlamaIndex RAG**, and robust document processing. Provides document analysis, regime comparison, PDF reports, and a Streamlit UI.
 
 ## ✨ Key Features
 
-### 📁 **Multi-Source Document Fetching**
-- **Local Folder**: Automatically scan `Desktop/Income Tax 2024-2025`
-- **Google Drive**: Fetch documents from your Google Drive
-- **Manual Upload**: Drag-and-drop interface
+### 📁 Multi-Source Document Fetching
+- **Local Folder**: Auto-scan `~/Desktop/Income Tax 2024-2025`
+- **Google Drive**: Fetch documents from your Drive
+- **Manual Upload**: Drag-and-drop
 - **Smart Classification**: Auto-detect document types
 
-### 🔍 **Missing Document Detection**
-- Comprehensive checklist for ITR-1, ITR-2, ITR-3, ITR-4
-- Priority-based recommendations (Mandatory → Recommended → Optional)
-- Tax-saving opportunity alerts
-- Completion percentage tracking
+### 🔍 Missing Document Detection
+- ITR-1/2/3/4 checklists with priorities
+- Tax-saving opportunity alerts and completion tracking
 
-### 📄 **Document Processing**
-- **Form 16/16A**: Extract salary, TDS, employer details
-- **Bank Statements**: Interest income, transaction analysis
-- **Investment Documents**: LIC, ELSS, PPF, EPF receipts
-- **Insurance**: Health insurance, term insurance premiums
-- **Property**: Home loan interest, rent receipts
-- **OCR Support**: Process scanned documents and images
+### 📄 Document Processing
+- Form 16/16A, bank statements, interest certificates
+- Investments: LIC, ELSS, PPF, EPF; Insurance; Home loan
+- OCR support for scanned PDFs/images
 
-### 🧮 **Tax Calculation Engine**
-- **Dual Tax Regime**: Compare New vs Old regime
-- **Deduction Calculator**: Section 80C, 80D, HRA, LTA
-- **Tax Optimization**: Recommend best tax-saving strategies
-- **ITR Form Generation**: Auto-fill ITR forms with extracted data
+### 🧮 Tax Calculation Engine
+- Old vs New regime comparison with recommendations
+- Section-wise deductions (80C, 80D, HRA, LTA, 24b, etc.)
+- PDF report generation
 
-### 🤖 **Advanced AI Capabilities**
-- **GPT-OSS-20B Integration**: Natural language understanding for tax questions
-- **LlamaIndex RAG**: Intelligent document retrieval and context-aware responses
-- **AI Document Classification**: Automatic recognition of document types and intent
-- **Conversational Interface**: Chat with your tax assistant in plain English
-- **Personalized Advice**: AI generates recommendations based on your documents
-- **Confidence Scoring**: Shows AI confidence in responses and classifications
-- **Knowledge Base**: Pre-loaded with Indian tax laws and ITR requirements
-- **Context Integration**: Combines your documents with tax law knowledge
-- **🛡️ Tax-Only Behavior**: Strictly refuses non-tax questions with 100% accuracy
-- **Professional Boundaries**: Maintains focus on Indian income tax matters only
+### 🤖 Advanced AI
+- GPT-OSS-20B + LlamaIndex RAG
+- Tax-only, professional responses
+- Confidence scoring and knowledge-base integration
 
-## 🚀 Quick Start
+## 🚀 Install & Run
 
-### 1. Installation
+### 1) Requirements
+- Python 3.8+
+- macOS/Linux/Windows
+- Optional: `tesseract-ocr` for OCR (macOS: `brew install tesseract`)
 
+### 2) Create a virtual environment (recommended)
 ```bash
-# Clone the repository
-git clone <your-repo-url>
-cd IncomeTax.ai
+python3 -m venv tax_ai_env
+source tax_ai_env/bin/activate  # Windows: tax_ai_env\Scripts\activate
+```
 
-# Install dependencies
+### 3) Install dependencies
+```bash
 pip install -r requirements.txt
 ```
 
-### 1.5. Launch AI Interface
+If your system is “externally managed” (pip install blocked), follow `QUICK_MODEL_SETUP.md`.
 
+### 4) Install Ollama (required) and pull model
+
+The app uses Ollama locally at `http://localhost:11434` with model `llama2`.
+
+macOS (Homebrew):
 ```bash
-# Launch the complete AI-powered web interface
+brew install ollama
+ollama pull llama2
+# Optional: test run (downloads if not pulled)
+ollama run llama2
+```
+
+Linux:
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+# Start service (systemd) or run in foreground
+sudo systemctl enable --now ollama || ollama serve &
+ollama pull llama2
+```
+
+Verify:
+```bash
+ollama list
+# Ensure 'llama2' is listed and server is running on :11434
+```
+
+Change model (optional): Update `model="llama2"` in `src/core/ollama_document_analyzer.py` and `src/models/llamaindex_rag.py`.
+
+### 5) (Optional) Download Hugging Face models
+```bash
+# Guided setup (recommended)
+python setup_models.py
+
+# or launch will guide you if models are missing
+python launch_production.py
+```
+- Full model: GPT-OSS-20B (~40GB, quantized) for best AI.
+- Lightweight options available during setup. See `MODEL_SETUP_GUIDE.md`.
+
+### 6) Start the app
+```bash
+# Production launcher (checks deps, sets up dirs, starts Streamlit)
+python launch_production.py
+
+# Or directly run Streamlit UI
 streamlit run src/ui/streamlit_app.py
-
-# Or run the AI capabilities demo
-python3 simple_ai_demo.py
-
-# Access the web interface at:
-# http://localhost:8501
 ```
+Open `http://localhost:8501`.
 
-### 2. Setup Your Documents
-
-Create the folder structure on your Desktop:
+## 📂 Prepare Your Documents
+Create the folder on your Desktop (auto-detected):
 ```
-Desktop/
+~/Desktop/
 └── Income Tax 2024-2025/
     ├── Salary Documents/
     │   ├── Form 16.pdf
@@ -93,35 +122,19 @@ Desktop/
         └── Rent Receipts/
 ```
 
-### 3. Run the Demo
+## 🧭 How to Use
+1. Start the app (see above) and open the web UI.
+2. On “Document Analysis”, select your documents folder or upload files.
+3. Review detected document types and missing-document checklist.
+4. Go to “Regime Comparison” to compare Old vs New and get recommendations.
+5. Use “Tax Assistant Chat” for tax-only guidance.
+6. Generate professional PDF reports from the “PDF Reports” tab.
 
-```bash
-python demo.py
-```
-
-This will:
-- Scan your documents folder
-- Detect document types
-- Show missing document analysis
-- Process sample documents
-- Provide recommendations
-
-### 4. Google Drive Integration (Optional)
-
-To enable Google Drive document fetching:
-
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project or select existing one
-3. Enable Google Drive API
-4. Create OAuth 2.0 credentials for Desktop application
-5. Download `credentials.json` and place in project root
-6. Run the demo - it will handle authentication
-
-### 5. Run Full Application
-
-```bash
-streamlit run src/ui/main_app.py
-```
+## 🔑 Google Drive (optional)
+1. Create OAuth credentials (Desktop app) in Google Cloud Console.
+2. Download `credentials.json` and place it in the project root.
+3. First launch will prompt for authorization and save `google_token.json`.
+See `GOOGLE_DRIVE_OAUTH_SETUP.md` for step-by-step instructions.
 
 ## 📋 Document Checklist
 
@@ -144,7 +157,7 @@ streamlit run src/ui/main_app.py
 - **Capital Gains Statements** - If you sold investments
 - **Rent Receipts** - HRA exemption claim
 
-## 🏗️ Architecture
+## 🏗️ Architecture (high level)
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
@@ -204,21 +217,7 @@ streamlit run src/ui/main_app.py
 ```
 
 ## 🔧 Configuration
-
-Edit `config/config.py` to customize:
-
-```python
-# Model settings
-model_config.reasoning_level = "medium"  # low, medium, high
-model_config.temperature = 0.1  # For consistent tax calculations
-
-# Document processing
-vectordb_config.chunk_size = 512
-vectordb_config.chunk_overlap = 50
-
-# Application settings
-app_config.max_chat_history = 20
-```
+Edit `config/config.py` to customize model, vector DB, and app options (title, temperature, chunk sizes, chat history). Environment vars supported: `MODEL_CACHE_DIR`, `DATA_DIR`, `LOG_LEVEL`.
 
 ## 🎯 Tax Features
 
@@ -268,66 +267,35 @@ AI: "Based on your income and deductions:
 ```
 IncomeTax.ai/
 ├── src/
-│   ├── core/               # Core business logic
-│   │   ├── document_checklist.py    # Missing document detection
-│   │   └── tax_calculator.py        # Tax calculation engine
-│   ├── models/             # AI/ML models
-│   │   ├── llm_integration.py       # GPT-OSS-20B integration
-│   │   └── embeddings.py            # Vector embeddings
-│   ├── data/               # Data processing
-│   │   ├── document_processor.py    # Document parsing
-│   │   ├── google_drive_integration.py  # Cloud storage
-│   │   └── multi_source_fetcher.py  # Unified document fetching
-│   └── ui/                 # User interface
-│       └── streamlit_app.py         # Web interface
+│   ├── core/                  # Core logic (calculations, analysis)
+│   ├── data/                  # Data ingestion & integrations
+│   ├── models/                # LLMs and embeddings
+│   └── ui/                    # Streamlit interface
 ├── data/
-│   ├── tax_documents/      # Knowledge base documents
-│   └── knowledge_base/     # Vector database
-├── config/                 # Configuration files
-├── tests/                  # Unit tests
-└── demo.py                 # Demo application
+│   ├── tax_documents/         # Knowledge base docs
+│   └── knowledge_base/        # Vector DB (ChromaDB)
+├── config/                    # Configuration
+└── tests/                     # Unit tests
 ```
 
 ### Adding New Document Processors
-1. Create processor in `src/data/document_processor.py`
-2. Add patterns to `DocumentClassifier`
-3. Update `document_checklist.py` with new document types
-4. Test with sample documents
+1. Add logic in `src/data/document_processor.py`
+2. Update classification rules where needed
+3. Extend `src/core/document_checklist.py`
+4. Test with sample docs
 
 ### Extending Tax Calculations
-1. Add new sections in `tax_calculator.py`
-2. Update knowledge base with latest tax laws
-3. Test calculations with sample data
+1. Add sections in `src/core/tax_calculator.py`
+2. Update knowledge base docs under `data/tax_documents/`
+3. Add tests in `tests/`
 
 ## 🐛 Troubleshooting
 
-### Common Issues
-
-1. **"Google Drive authentication failed"**
-   ```bash
-   # Download credentials.json from Google Cloud Console
-   # Place in project root and run demo again
-   ```
-
-2. **"No documents found"**
-   ```bash
-   # Check folder exists: ~/Desktop/Income Tax 2024-2025
-   # Verify supported file formats: PDF, Excel, images
-   ```
-
-3. **"OCR not working"**
-   ```bash
-   pip install pytesseract
-   # On macOS: brew install tesseract
-   # On Ubuntu: sudo apt-get install tesseract-ocr
-   ```
-
-4. **"Model download failed"**
-   ```bash
-   # Ensure sufficient disk space (20GB+)
-   # Check internet connection
-   # Try running with --model-cache-dir flag
-   ```
+- **Externally managed Python (pip blocked)**: Use a virtualenv. See `QUICK_MODEL_SETUP.md`.
+- **No documents found**: Verify `~/Desktop/Income Tax 2024-2025` exists and contains PDFs/Excel/images.
+- **OCR not working**: `pip install pytesseract` and install system `tesseract` (macOS: `brew install tesseract`).
+- **Model download failed**: Ensure 20GB+ free space (full model), stable internet, or choose lightweight models in `setup_models.py`.
+- **Google Drive auth**: Place `credentials.json` in project root and re-run. See `GOOGLE_DRIVE_OAUTH_SETUP.md`.
 
 ## 📝 License
 

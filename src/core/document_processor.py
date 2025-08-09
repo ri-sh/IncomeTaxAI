@@ -20,7 +20,7 @@ class DocumentProcessor:
         self.supported_extensions = ['.pdf', '.xlsx', '.xls', '.csv']
         self.logger = logging.getLogger(__name__)
         
-        print("📄 Document Processor initialized")
+        self.logger.info("Document Processor initialized")
     
     def extract_text_from_pdf(self, file_path: str) -> str:
         """Extract text from PDF file"""
@@ -35,7 +35,7 @@ class DocumentProcessor:
             return text.strip()
             
         except Exception as e:
-            self.logger.error(f"Error extracting text from PDF {file_path}: {e}")
+            self.logger.exception(f"Error extracting text from PDF {file_path}: {e}")
             return ""
     
     def extract_text_from_excel(self, file_path: str) -> str:
@@ -56,7 +56,7 @@ class DocumentProcessor:
             return "\n".join(text_parts)
             
         except Exception as e:
-            self.logger.error(f"Error extracting text from Excel {file_path}: {e}")
+            self.logger.exception(f"Error extracting text from Excel {file_path}: {e}")
             return ""
     
     def extract_text_from_csv(self, file_path: str) -> str:
@@ -66,7 +66,7 @@ class DocumentProcessor:
             return df.to_string(index=False)
             
         except Exception as e:
-            self.logger.error(f"Error extracting text from CSV {file_path}: {e}")
+            self.logger.exception(f"Error extracting text from CSV {file_path}: {e}")
             return ""
     
     def extract_text_content(self, file_path: str) -> str:

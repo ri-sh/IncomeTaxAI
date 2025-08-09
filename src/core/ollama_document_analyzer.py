@@ -6,6 +6,7 @@ Uses LLM to read file contents and extract all relevant tax details directly
 import json
 import re
 from pathlib import Path
+import logging
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, asdict
 import fitz  # PyMuPDF for PDF text extraction
@@ -66,6 +67,7 @@ class OllamaDocumentAnalyzer:
     
     def __init__(self):
         self.llm = self._setup_ollama()
+        self.logger = logging.getLogger(__name__)
     
     def _setup_ollama(self) -> Optional[Ollama]:
         """Setup Ollama LLM for document analysis"""
@@ -81,11 +83,11 @@ class OllamaDocumentAnalyzer:
             
             # Test the connection
             test_response = ollama_llm.complete("Hello")
-            print("✅ Ollama LLM ready for document analysis")
+            logging.getLogger(__name__).info("Ollama LLM ready for document analysis")
             return ollama_llm
             
         except Exception as e:
-            print(f"⚠️ Could not setup Ollama: {e}")
+            logging.getLogger(__name__).warning(f"Could not setup Ollama: {e}")
             return None
     
     def analyze_document(self, file_path: str) -> OllamaExtractedData:
@@ -123,6 +125,7 @@ class OllamaDocumentAnalyzer:
             return extracted_data
             
         except Exception as e:
+            logging.getLogger(__name__).exception(f"Document analysis error for {file_path}: {e}")
             return OllamaExtractedData(
                 document_type="unknown",
                 confidence=0.0,
@@ -1031,6 +1034,11 @@ class OllamaDocumentAnalyzer:
                 
                 # Post-process Form16 data to ensure correct totals
                 if json_data.get('document_type') == 'form_16':
+                    # If employer name missing, try regex fallback using raw text before post-processing
+                    if (not json_data.get('employer_name')) and text_content:
+                        inferred_employer = self._extract_employer_name_regex(text_content)
+                        if inferred_employer:
+                            json_data['employer_name'] = inferred_employer
                     json_data = self._post_process_form16_data(json_data)
                 
                 # Post-process bank interest certificate data to ensure correct totals
@@ -1481,8 +1489,19 @@ class OllamaDocumentAnalyzer:
                     json_data.update(quarterly_data)
                 else:
                     print(f"✅ Current totals are accurate, keeping as-is")
+                
+                # Ensure total_gross_salary mirrors gross_salary if it's zero but quarterly total exists
+                if float(json_data.get('total_gross_salary', 0) or 0) == 0 and float(json_data.get('gross_salary', 0) or 0) > 0:
+                    json_data['total_gross_salary'] = float(json_data.get('gross_salary', 0) or 0)
+                    json_data.setdefault('extraction_method', 'ollama_llm')
+                    if not json_data['extraction_method'].endswith('_with_regex_correction'):
+                        json_data['extraction_method'] += '_with_quarterly_total_fill'
             else:
                 print("⚠️ Regex extraction failed, keeping current totals")
+                # Still fill total_gross_salary if gross_salary is available
+                if float(json_data.get('total_gross_salary', 0) or 0) == 0 and float(json_data.get('gross_salary', 0) or 0) > 0:
+                    json_data['total_gross_salary'] = float(json_data.get('gross_salary', 0) or 0)
+                    json_data.setdefault('extraction_method', 'ollama_llm_with_quarterly_total_fill')
             
             return json_data
             
@@ -2194,6 +2213,10 @@ Respond with ONLY the JSON object, no other text or explanations.
                 # Remove comments (// ...)
                 import re
                 json_text = re.sub(r'//.*?$', '', json_text, flags=re.MULTILINE)
+                # Remove trailing commas before closing braces/brackets
+                json_text = re.sub(r',\s*([}\]])', r'\1', json_text)
+                # Replace single quotes with double quotes cautiously (only in keys)
+                json_text = re.sub(r"'([A-Za-z0-9_]+)'\s*:\s*", r'"\1": ', json_text)
                 
                 # Try parsing again
                 data = json.loads(json_text)
@@ -2223,6 +2246,12 @@ Respond with ONLY the JSON object, no other text or explanations.
                 cleaned[key] = value
             else:
                 cleaned[key] = value
+        
+        # Employer fallback from raw_text if missing
+        if (not cleaned.get('employer_name')) and isinstance(cleaned.get('raw_text'), str):
+            fallback = self._extract_employer_name_regex(cleaned.get('raw_text'))
+            if fallback:
+                cleaned['employer_name'] = fallback
         
         return cleaned
 
@@ -2273,6 +2302,29 @@ Respond with ONLY the JSON object, no other text or explanations.
             print(f"❌ Error in manual extraction: {e}")
         
         return None
+
+    def _extract_employer_name_regex(self, raw_text: str) -> Optional[str]:
+        """Attempt to extract employer name from raw text using regex heuristics."""
+        try:
+            import re
+            text = raw_text or ""
+            patterns = [
+                r"Name\s+and\s+address\s+of\s+employer\s*[:\-]\s*(.+)",
+                r"Name\s*of\s*Employer\s*[:\-]\s*(.+)",
+                r"Employer\s*Name\s*[:\-]\s*(.+)",
+                r"Employer\s*[:\-]\s*(.+)",
+            ]
+            for pat in patterns:
+                m = re.search(pat, text, re.IGNORECASE)
+                if m:
+                    line = m.group(1).strip()
+                    line = re.split(r"[\r\n]", line)[0]
+                    line = re.split(r"\s{2,}|Address\s*[:\-]", line)[0].strip()
+                    if 2 <= len(line) <= 200:
+                        return line
+            return None
+        except Exception:
+            return None
     
     def analyze_multiple_documents(self, file_paths: List[str]) -> List[OllamaExtractedData]:
         """Analyze multiple documents and return consolidated results"""

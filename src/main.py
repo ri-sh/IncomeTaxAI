@@ -8,6 +8,7 @@ Supports document analysis, tax calculations, and ITR form assistance.
 """
 
 import os
+import logging
 import sys
 import json
 from pathlib import Path
@@ -26,6 +27,7 @@ class IncomeTaxAssistant:
     
     def __init__(self, financial_year: str = "2024-25"):
         """Initialize the tax assistant"""
+        self._ensure_logging()
         self.document_analyzer = OllamaDocumentAnalyzer()
         self.document_processor = DocumentProcessor()
         self.financial_year = financial_year
@@ -37,6 +39,27 @@ class IncomeTaxAssistant:
         
         print("🚀 Income Tax AI Assistant Initialized")
         print("=" * 50)
+
+    def _ensure_logging(self) -> None:
+        """Configure application logging to write to rotating log files."""
+        logs_dir = Path(__file__).resolve().parent.parent / "logs"
+        logs_dir.mkdir(exist_ok=True)
+        log_file = logs_dir / "app.log"
+
+        # Avoid duplicate handlers if reinitialized in a Streamlit session
+        root_logger = logging.getLogger()
+        if any(isinstance(h, logging.FileHandler) and getattr(h, 'baseFilename', None) == str(log_file) for h in root_logger.handlers):
+            return
+
+        log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+        logging.basicConfig(
+            level=getattr(logging, log_level, logging.INFO),
+            format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+            handlers=[
+                logging.FileHandler(log_file, encoding="utf-8"),
+                logging.StreamHandler()
+            ],
+        )
     
     def analyze_documents_folder(self, folder_path: str) -> List[OllamaExtractedData]:
         """Analyze all documents in a folder"""
@@ -160,6 +183,7 @@ class IncomeTaxAssistant:
             elif is_capital_gains:
                 by_fy[fy]["capital_gains"] += getattr(doc, 'total_capital_gains', 0.0)
             elif is_investment:
+                # Aggregate 80C-like items first; NPS handled below with proper caps
                 by_fy[fy]["total_deductions"] += (
                     getattr(doc, 'epf_amount', 0.0) + 
                     getattr(doc, 'ppf_amount', 0.0) + 
@@ -167,6 +191,15 @@ class IncomeTaxAssistant:
                     getattr(doc, 'elss_amount', 0.0) + 
                     getattr(doc, 'health_insurance', 0.0)
                 )
+                # Capture NPS fields if present
+                # We'll apply caps when computing old regime tax
+                by_fy[fy].setdefault('nps_tier1', 0.0)
+                by_fy[fy].setdefault('nps_1b', 0.0)
+                by_fy[fy].setdefault('nps_employer', 0.0)
+                by_fy[fy]['nps_tier1'] += getattr(doc, 'nps_tier1_contribution', 0.0)
+                # Try to detect 1B amount if labeled separately; else leave 0 (user may upload specific receipt)
+                by_fy[fy]['nps_1b'] += getattr(doc, 'nps_80ccd1b', 0.0)
+                by_fy[fy]['nps_employer'] += getattr(doc, 'nps_employer_contribution', 0.0)
         
         # Build per-FY summaries
         result: Dict[str, Any] = {
@@ -179,7 +212,16 @@ class IncomeTaxAssistant:
             total_income = float(agg.get("salary_income", 0.0)) + float(agg.get("interest_income", 0.0)) + float(agg.get("capital_gains", 0.0))
             calc = TaxCalculator(fy)
             new_tax = calc.calculate_new_regime_tax(total_income) if total_income > 0 else 0.0
-            old_tax = calc.calculate_old_regime_tax(total_income, agg["total_deductions"]) if total_income > 0 else 0.0
+            # Apply 80C/80CCD(1)/80CCD(1B) caps for old regime
+            base_80c_like = agg.get("total_deductions", 0.0)
+            nps_tier1 = agg.get('nps_tier1', 0.0)
+            nps_1b = agg.get('nps_1b', 0.0)
+            # 80C cap 1.5L for EPF/PPF/ELSS/life insurance + 80CCD(1)
+            capped_80c = min(base_80c_like + nps_tier1, 150000.0)
+            # Additional 80CCD(1B) cap 50k
+            capped_1b = min(nps_1b, 50000.0)
+            total_deductions_old = capped_80c + capped_1b
+            old_tax = calc.calculate_old_regime_tax(total_income, total_deductions_old) if total_income > 0 else 0.0
             recommended = "new" if new_tax < old_tax else "old"
             result["by_financial_year"][fy] = {
                 **agg,
@@ -187,14 +229,34 @@ class IncomeTaxAssistant:
                 "tax_liability_new_regime": new_tax,
                 "tax_liability_old_regime": old_tax,
                 "recommended_regime": recommended,
+                "deductions_capped_80c": capped_80c,
+                "deductions_80ccd1b": capped_1b,
+                "total_deductions_old_regime": total_deductions_old,
             }
         
-        # Backward-compatible top-level summary for selected FY
+        # Backward-compatible top-level summary for selected FY (robust defaults)
         selected = result["by_financial_year"].get(self.financial_year)
+        if not selected and result["by_financial_year"]:
+            # Fallback to any available FY if the configured FY has no entries
+            selected = next(iter(result["by_financial_year"].values()))
+
         if selected:
             result.update(selected)
             # Print summary for selected FY
             self._print_tax_summary(result)
+        else:
+            # Ensure UI-safe defaults when no documents are analyzed
+            result.update({
+                "total_income": 0.0,
+                "salary_income": 0.0,
+                "interest_income": 0.0,
+                "capital_gains": 0.0,
+                "total_deductions": 0.0,
+                "tax_paid": 0.0,
+                "tax_liability_new_regime": 0.0,
+                "tax_liability_old_regime": 0.0,
+                "recommended_regime": "new",
+            })
         
         self.tax_summary = result
         return result
@@ -209,12 +271,16 @@ class IncomeTaxAssistant:
         
         # Add HRA calculation if we have salary data
         if tax_summary["salary_income"] > 0:
-            # Get HRA from Form 16 (if available)
-            hra_received = 0
+            # Get HRA from any available document (Form 16 or payslips)
+            hra_received = 0.0
             for doc in self.analyzed_documents:
-                if doc.document_type == "form_16" and hasattr(doc, 'hra_received'):
-                    hra_received = doc.hra_received
-                    break
+                hra_val = 0.0
+                if hasattr(doc, 'hra_received') and doc.hra_received:
+                    hra_val = float(doc.hra_received)
+                elif hasattr(doc, 'hra') and doc.hra:
+                    hra_val = float(doc.hra)
+                if hra_val > hra_received:
+                    hra_received = hra_val
             
             # If HRA not found in Form 16, estimate it (typically 40-50% of basic salary)
             if hra_received == 0:

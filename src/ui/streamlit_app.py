@@ -105,6 +105,25 @@ def init_session_state():
     if 'initialization_done' not in st.session_state:
         st.session_state.initialization_done = False
 
+def _inject_compact_css():
+    """Inject compact CSS to improve layout density and add scrollable areas."""
+    st.markdown(
+        """
+        <style>
+        /* Reduce default paddings/margins */
+        .block-container {padding-top: 1.25rem; padding-bottom: 1.25rem;}
+        .stMetric {margin-bottom: 0.5rem;}
+        .stTabs [data-baseweb="tab-list"] {gap: 0.5rem;}
+        .stExpander {border: 1px solid rgba(49,51,63,0.2); border-radius: 8px;}
+        .stExpander > div {padding-top: 0.35rem; padding-bottom: 0.35rem;}
+        .scroll-box {max-height: 480px; overflow-y: auto; padding-right: 8px;}
+        /* Nice cards */
+        .card {background: #ffffff; border: 1px solid rgba(49,51,63,0.15); border-radius: 10px; padding: 10px;}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
 @st.cache_resource
 def load_ai_assistant(user_documents_path: str, load_model: bool = False):
     """Load AI assistant with both optimized models (cached for performance)"""
@@ -140,15 +159,18 @@ def load_ai_assistant(user_documents_path: str, load_model: bool = False):
             except Exception as e:
                 print(f"⚠️ Donut Model not available: {e}")
         
-        # Test document analysis capability
-        if Path(user_documents_path).exists():
-            # Try to analyze one document to test the system
-            test_files = list(Path(user_documents_path).glob("*.pdf"))[:1]
-            if test_files:
-                test_result = assistant.analyze_documents_folder(str(test_files[0].parent))
-                if test_result:
-                    return assistant, True
-        
+        # Tag assistant with metadata for cache/fresh load visibility in UI
+        from datetime import datetime
+        assistant.computed_at = datetime.now().isoformat()
+        assistant.models_loaded = models_loaded
+        # When returned via Streamlit cache, mark as cached by default
+        try:
+            assistant.loaded_from_cache = True
+        except Exception:
+            pass
+
+        # Initialization should not trigger document analysis.
+        # Only load models and return the assistant; analysis is user-initiated from the UI.
         return assistant, True
         
     except Exception as e:
@@ -160,6 +182,17 @@ def analyze_document_with_selected_model(assistant, file_path: str, selected_mod
     try:
         if selected_model == "Ollama LLM (Fast)":
             if hasattr(assistant, 'ollama_analyzer'):
+                # Allow bypassing the analyzer cache when user requests (widget) or via one-shot flag
+                bypass_cache = st.session_state.get('bypass_analysis_cache', False) or st.session_state.get('force_bypass_analysis_cache_once', False)
+                if bypass_cache and hasattr(assistant.ollama_analyzer, '_load_from_cache'):
+                    # Temporarily disable cache by monkey-patching loader to return None
+                    original_loader = assistant.ollama_analyzer._load_from_cache
+                    try:
+                        assistant.ollama_analyzer._load_from_cache = lambda key: None
+                        result = assistant.ollama_analyzer.analyze_document(file_path)
+                    finally:
+                        assistant.ollama_analyzer._load_from_cache = original_loader
+                    return result
                 return assistant.ollama_analyzer.analyze_document(file_path)
             else:
                 # Fallback to original method
@@ -203,10 +236,33 @@ def analyze_document_with_selected_model(assistant, file_path: str, selected_mod
         st.error(f"Error analyzing {file_path} with {selected_model}: {e}")
         return None
 
+def _save_uploaded_files(uploaded_files, base_folder: str) -> List[str]:
+    """Save uploaded Streamlit files to a temp subfolder inside the user's docs folder.
+    Returns list of saved absolute file paths.
+    """
+    try:
+        base = Path(base_folder)
+        # Create a subfolder to keep uploads organized and non-destructive
+        target_dir = base / "_uploaded_via_ui"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        saved_paths: List[str] = []
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        for idx, f in enumerate(uploaded_files):
+            # Sanitize filename and avoid collisions
+            safe_name = Path(f.name).name
+            save_path = target_dir / f"{timestamp}_{idx}_{safe_name}"
+            with open(save_path, "wb") as out:
+                out.write(f.getbuffer())
+            saved_paths.append(str(save_path))
+        return saved_paths
+    except Exception:
+        return []
+
 def main():
     """Main Streamlit application"""
     
     init_session_state()
+    _inject_compact_css()
     
     # Handle OAuth callback
     if 'code' in st.query_params:
@@ -227,7 +283,7 @@ def main():
     st.markdown("""
     <div class="main-header">
         <h1>🇮🇳 Income Tax AI Assistant - FY 2024-25</h1>
-        <p>Intelligent tax filing with GPT-OSS-20B & LlamaIndex | Document Analysis | Tax Optimization</p>
+        <p>Intelligent tax filing with AI| Document Analysis | Tax Optimization</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -342,13 +398,31 @@ def main():
                     st.success("✅ AI Assistant loaded successfully!")
                 else:
                     st.warning("⚠️ AI Assistant loaded with limited functionality")
+
+        # Re-initialize (bypass cache) button
+        if st.button("♻️ Re-initialize (Bypass Cache)"):
+            with st.spinner("Reloading AI components (no cache)..."):
+                # Clear cached resource so the next call loads fresh
+                load_ai_assistant.clear()
+                assistant, success = load_ai_assistant(user_docs_path, load_full_model)
+                # Mark metadata to indicate fresh (non-cached) load
+                try:
+                    assistant.loaded_from_cache = False
+                except Exception:
+                    pass
+                st.session_state.ai_assistant = assistant
+                st.session_state.initialization_done = success
+                if success:
+                    st.success("✅ Re-initialized without cache!")
+                else:
+                    st.warning("⚠️ Re-initialized with limited functionality")
         
         # Status
         st.subheader("📊 System Status")
         if st.session_state.ai_assistant:
             assistant = st.session_state.ai_assistant
             
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4 = st.columns(4)
             with col1:
                 st.metric("🤖 Ollama LLM", "✅ Ready")
             with col2:
@@ -358,6 +432,11 @@ def main():
                     st.metric("🔍 Donut Model", "❌ Not Loaded")
             with col3:
                 st.metric("📄 Document Processor", "✅ Ready")
+            with col4:
+                # Show cache status: True if Streamlit served from cache, False if fresh
+                cache_status = getattr(assistant, 'loaded_from_cache', None)
+                cache_label = "Cached" if cache_status else "Fresh"
+                st.metric("🗃️ Load Source", cache_label)
             
             # Show analyzed documents count
             if hasattr(st.session_state, 'analyzed_documents'):
@@ -611,6 +690,11 @@ def show_document_analysis_tab():
                                     result = analyze_document_with_selected_model(assistant, str(file_path), selected_model)
                                     
                                     if result:
+                                        # Attach source filename for later display
+                                        try:
+                                            setattr(result, 'source_file', file_path.name)
+                                        except Exception:
+                                            pass
                                         analyzed_docs.append(result)
                                         st.write(f"✅ Analyzed: {file_path.name}")
                                     else:
@@ -627,6 +711,11 @@ def show_document_analysis_tab():
                         
                         if analyzed_docs:
                             st.session_state.analyzed_documents = analyzed_docs
+                            # Ensure assistant uses these results for summary
+                            try:
+                                assistant.analyzed_documents = analyzed_docs
+                            except Exception:
+                                pass
                             st.success(f"✅ Successfully analyzed {len(analyzed_docs)} documents!")
                             
                             # Check for perfect Form16 analysis
@@ -638,7 +727,7 @@ def show_document_analysis_tab():
                                     if accuracy > 99:
                                         st.success("🎉 **PERFECT ACCURACY!** Form16 analysis is 100% accurate with robust patterns!")
                             
-                            # Calculate tax summary
+                            # Calculate tax summary using the analyzed documents
                             tax_summary = assistant.calculate_tax_summary()
                             st.session_state.tax_summary = tax_summary
                             
@@ -649,6 +738,41 @@ def show_document_analysis_tab():
                     st.error(f"❌ Error analyzing documents: {e}")
     
     with col2:
+        # Cache controls
+        st.checkbox("Bypass analysis cache for next run", key="bypass_analysis_cache", help="Force fresh analysis by skipping cached results")
+        if st.button("🔁 Re-run Analysis (No Cache)"):
+            try:
+                # Use a separate, programmatic one-shot flag to avoid mutating widget state
+                st.session_state.force_bypass_analysis_cache_once = True
+                selected_model = st.session_state.get('selected_model', 'Ollama LLM (Fast)')
+                user_docs_path = st.session_state.get('user_docs_path', str(Path.home() / "Documents" / "Tax Documents"))
+                all_files = list(Path(user_docs_path).glob("*.pdf")) + list(Path(user_docs_path).glob("*.xlsx")) + list(Path(user_docs_path).glob("*.xls"))
+                if not all_files:
+                    st.warning("⚠️ No documents found to re-analyze.")
+                else:
+                    st.info(f"🔁 Re-analyzing {len(all_files)} documents without cache...")
+                    analyzed_docs = []
+                    progress_bar = st.progress(0)
+                    for i, file_path in enumerate(all_files):
+                        progress_bar.progress((i + 1) / len(all_files))
+                        try:
+                            result = analyze_document_with_selected_model(assistant, str(file_path), selected_model)
+                            if result:
+                                analyzed_docs.append(result)
+                        except Exception as e:
+                            st.error(f"❌ Error re-analyzing {file_path.name}: {e}")
+                    progress_bar.empty()
+                    if analyzed_docs:
+                        st.session_state.analyzed_documents = analyzed_docs
+                        tax_summary = assistant.calculate_tax_summary()
+                        st.session_state.tax_summary = tax_summary
+                        st.success("✅ Re-analysis completed without using cache!")
+                    else:
+                        st.warning("⚠️ Re-analysis produced no results.")
+            finally:
+                # Reset one-shot bypass after this run
+                st.session_state.force_bypass_analysis_cache_once = False
+
         if st.button("📊 Export Analysis"):
             try:
                 assistant.generate_report("tax_analysis_report.json")
@@ -656,16 +780,135 @@ def show_document_analysis_tab():
             except Exception as e:
                 st.error(f"❌ Error exporting report: {e}")
     
+    # Quick upload panel to add missing/supplementary files and re-analyze
+    st.markdown("---")
+    st.subheader("📁 Add/Update Documents")
+    st.caption("Upload missing files (e.g., rent receipts, home loan interest/principal certificates, bank interest, Form 16A). They will be saved to your folder and analyzed immediately.")
+
+    upload_cols = st.columns([2, 2, 1])
+    with upload_cols[0]:
+        uploaded_files = st.file_uploader(
+            "Upload one or more files",
+            type=["pdf", "xlsx", "xls", "csv"],
+            accept_multiple_files=True,
+            key="doc_upload"
+        )
+    with upload_cols[1]:
+        doc_category = st.selectbox(
+            "Optional: Tag as",
+            [
+                "Auto-detect",
+                "🏠 Rent Receipts (HRA)",
+                "🏠 Home Loan Interest (Sec 24b)",
+                "🏠 Home Loan Principal (80C)",
+                "🏦 Bank Interest Certificate",
+                "🧾 Form 16A (Non-salary TDS)",
+                "💼 Investments (ELSS/PPF/EPF/LIC)",
+                "📈 Capital Gains"
+            ],
+            index=0,
+            help="This helps prioritise parsing; actual type is still auto-detected."
+        )
+    with upload_cols[2]:
+        upload_and_analyze = st.button("⬆️ Upload & Analyze", type="secondary")
+
+    if upload_and_analyze and uploaded_files:
+        user_docs_path = st.session_state.get('user_docs_path', str(Path.home() / "Documents" / "Tax Documents"))
+        saved = _save_uploaded_files(uploaded_files, user_docs_path)
+        if not saved:
+            st.error("❌ Failed to save uploaded files. Check folder permissions.")
+        else:
+            st.success(f"✅ Saved {len(saved)} file(s). Analyzing now...")
+            selected_model = st.session_state.get('selected_model', 'Ollama LLM (Fast)')
+            analyzed_docs = st.session_state.get('analyzed_documents', []) or []
+            progress = st.progress(0)
+            for i, fp in enumerate(saved):
+                progress.progress((i + 1) / len(saved))
+                result = analyze_document_with_selected_model(assistant, fp, selected_model)
+                if result:
+                    # If user tagged as housing, nudge type if unknown
+                    tag_lower = doc_category.lower()
+                    if doc_category != "Auto-detect" and getattr(result, 'document_type', 'unknown') == 'unknown':
+                        if "rent" in tag_lower:
+                            result.document_type = "rent_receipts"
+                        elif "interest" in tag_lower:
+                            result.document_type = "home_loan_interest"
+                        elif "principal" in tag_lower:
+                            result.document_type = "home_loan_principal"
+                        elif "bank interest" in tag_lower:
+                            result.document_type = "bank_interest_certificate"
+                        elif "form 16a" in tag_lower:
+                            result.document_type = "form_16a"
+                        elif "investments" in tag_lower:
+                            result.document_type = "investment"
+                        elif "capital gains" in tag_lower:
+                            result.document_type = "capital_gains"
+                    analyzed_docs.append(result)
+                else:
+                    st.warning(f"⚠️ Failed to analyze: {Path(fp).name}")
+            progress.empty()
+            if analyzed_docs:
+                st.session_state.analyzed_documents = analyzed_docs
+                # Recalculate tax immediately
+                tax_summary = assistant.calculate_tax_summary()
+                st.session_state.tax_summary = tax_summary
+                st.success("🎉 Documents analyzed and tax recalculated!")
+                st.rerun()
+
     # Show analysis results
     if hasattr(st.session_state, 'analyzed_documents') and st.session_state.analyzed_documents:
         st.subheader("📋 Analysis Results")
+
+        # Summary row: analyzed docs and suggestions side-by-side
+        sum_col1, sum_col2 = st.columns([2, 2])
+        with sum_col1:
+            docs = st.session_state.analyzed_documents
+            doc_rows = []
+            for d in docs:
+                dtype = getattr(d, 'document_type', 'unknown')
+                fname = getattr(d, 'source_file', '—')
+                doc_rows.append((dtype, fname))
+            if doc_rows:
+                st.markdown("**Uploaded Documents Analyzed:**")
+                with st.container():
+                    st.markdown('<div class="scroll-box">', unsafe_allow_html=True)
+                    for dtype, fname in doc_rows:
+                        st.write(f"• {dtype.title()} — {fname}")
+                    st.markdown('</div>', unsafe_allow_html=True)
+
+        with sum_col2:
+            existing_types = {getattr(d, 'document_type', 'unknown') for d in st.session_state.analyzed_documents}
+            required = [
+                ('form_16', 'Form 16'),
+                ('interest_certificate', 'Bank Interest Certificate (All banks)'),
+                ('form_16a', 'Form 16A (Non-salary TDS)'),
+                ('investment', 'Investment Proofs (ELSS/PPF/EPF/LIC)'),
+                ('capital_gains', 'Capital Gains Statements (Stocks/MFs)'),
+                ('rent_receipts', 'Rent Receipts (HRA)'),
+                ('home_loan_interest', 'Home Loan Interest (Section 24b)'),
+                ('home_loan_principal', 'Home Loan Principal (80C)'),
+                ('health_insurance', 'Health Insurance Premium (80D)'),
+                ('nps', 'NPS Contribution Receipt (80CCD(1B) up to ₹50,000)')
+            ]
+            suggested = [label for key, label in required if key not in existing_types]
+            if suggested:
+                st.markdown("**You can additionally upload:**")
+                with st.container():
+                    st.markdown('<div class="scroll-box">', unsafe_allow_html=True)
+                    for s in suggested:
+                        st.write(f"• {s}")
+                    st.markdown('</div>', unsafe_allow_html=True)
         
-        for doc in st.session_state.analyzed_documents:
+        cols = st.columns(2)
+        for i, doc in enumerate(st.session_state.analyzed_documents):
+            col = cols[i % 2]
             # Show model used in the title
             model_used = doc.extraction_method if hasattr(doc, 'extraction_method') else 'ollama_llm'
             model_display = "🔍 Donut" if "donut" in model_used else "🤖 Ollama"
             
-            with st.expander(f"{model_display} 📄 {doc.document_type.title()} - Confidence: {doc.confidence:.1%}", expanded=False):
+            # Cache badge
+            cache_badge = " | 🗃️ Cached" if getattr(doc, 'cache_hit', False) else " | 🔄 Fresh"
+            with col.expander(f"{model_display} 📄 {doc.document_type.title()} - Confidence: {doc.confidence:.1%}{cache_badge}", expanded=False):
                 
                 # Basic info
                 col1, col2, col3 = st.columns(3)
@@ -692,7 +935,7 @@ def show_document_analysis_tab():
                         st.write(f"• **Basic Salary:** ₹{doc.basic_salary:,.2f}")
                         st.write(f"• **Perquisites:** ₹{doc.perquisites:,.2f}")
                         st.write(f"• **Total Gross Salary:** ₹{doc.total_gross_salary:,.2f}")
-                        st.write(f"• **Gross Salary (Quarterly):** ₹{doc.gross_salary:,.2f}")
+                        st.write(f"• **Gross Salary (Sum of Q1–Q4):** ₹{doc.gross_salary:,.2f}")
                     
                     with col2:
                         st.write("**🧾 Tax Information:**")
@@ -724,11 +967,17 @@ def show_document_analysis_tab():
                     st.write(f"• **Transactions:** {doc.number_of_transactions}")
                 
                 elif doc.document_type == "investment":
-                    st.write(f"• **EPF:** ₹{doc.epf_amount:,.2f}")
-                    st.write(f"• **PPF:** ₹{doc.ppf_amount:,.2f}")
-                    st.write(f"• **ELSS:** ₹{doc.elss_amount:,.2f}")
-                    st.write(f"• **Life Insurance:** ₹{doc.life_insurance:,.2f}")
-                    st.write(f"• **Health Insurance:** ₹{doc.health_insurance:,.2f}")
+                    # Merge all investment details into a single block
+                    st.write("**💼 Investment Details (merged):**")
+                    st.write(f"• **EPF:** ₹{getattr(doc, 'epf_amount', 0.0):,.2f}")
+                    st.write(f"• **PPF:** ₹{getattr(doc, 'ppf_amount', 0.0):,.2f}")
+                    st.write(f"• **ELSS:** ₹{getattr(doc, 'elss_amount', 0.0):,.2f}")
+                    st.write(f"• **Life Insurance:** ₹{getattr(doc, 'life_insurance', 0.0):,.2f}")
+                    st.write(f"• **Health Insurance:** ₹{getattr(doc, 'health_insurance', 0.0):,.2f}")
+                    # Show NPS if present in this doc
+                    if hasattr(doc, 'nps_tier1_contribution') or hasattr(doc, 'nps_tier2_contribution'):
+                        st.write(f"• **NPS Tier I:** ₹{getattr(doc, 'nps_tier1_contribution', 0.0):,.2f}")
+                        st.write(f"• **NPS Tier II:** ₹{getattr(doc, 'nps_tier2_contribution', 0.0):,.2f}")
                 
                 # Show errors if any
                 if doc.errors:
@@ -955,9 +1204,11 @@ def show_dashboard_tab():
         )
     
     # Auto-recalculate when inputs change
-    if st.session_state.get('rent_paid') != rent_paid or st.session_state.get('is_metro') != is_metro:
+    if (
+        st.session_state.get('rent_paid') != rent_paid or
+        st.session_state.get('is_metro') != is_metro
+    ) and 'tax_summary' in st.session_state and st.session_state.tax_summary:
         with st.spinner("🔄 Updating calculations..."):
-            # Recalculate tax summary with new inputs
             updated_summary = assistant.calculate_tax_summary_with_additional_data(
                 rent_paid=rent_paid,
                 is_metro=is_metro

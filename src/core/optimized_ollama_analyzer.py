@@ -68,6 +68,13 @@ class OptimizedExtractedData:
     raw_text: str = ""
     errors: List[str] = None
     employer_name: str = ""
+    # NPS fields
+    nps_pran: str = ""
+    nps_subscriber: str = ""
+    nps_financial_year: str = ""
+    nps_tier1_contribution: float = 0.0
+    nps_tier2_contribution: float = 0.0
+    nps_employer_contribution: float = 0.0
     
     def __post_init__(self):
         if self.errors is None:
@@ -85,6 +92,9 @@ class OptimizedOllamaAnalyzer:
     - Performance monitoring
     """
     
+    # Bump this when cached schema/fields change so old cache is invalidated
+    CACHE_SCHEMA_VERSION = "2-hra-nps"
+
     def __init__(self, cache_dir: str = "cache"):
         self.base_analyzer = OllamaDocumentAnalyzer()
         self.cache_dir = Path(cache_dir)
@@ -158,6 +168,33 @@ class OptimizedOllamaAnalyzer:
                 r"Other[:\s]*₹?([\d,]+\.?\d*)",
                 r"Additional Allowances[:\s]*₹?([\d,]+\.?\d*)"
             ],
+            # NPS patterns
+            "nps_pran": [
+                r"PRAN[:\s]*([0-9]{12})",
+                r"Permanent Retirement Account Number[:\s]*([0-9]{12})"
+            ],
+            "nps_subscriber": [
+                r"Subscriber Name[:\s]*([A-Z][A-Z\s\.]+)",
+                r"Name[:\s]*([A-Z][A-Z\s\.]+)\s+PRAN"
+            ],
+            "nps_tier1_contribution": [
+                r"Tier[\s\-]*I[:\s]*Contribution[:\s]*₹?([\d,]+\.?\d*)",
+                r"Tier[\s\-]*I\s+Total[:\s]*₹?([\d,]+\.?\d*)",
+                r"NPS\s*Tier\s*I[:\s]*₹?([\d,]+\.?\d*)"
+            ],
+            "nps_tier2_contribution": [
+                r"Tier[\s\-]*II[:\s]*Contribution[:\s]*₹?([\d,]+\.?\d*)",
+                r"Tier[\s\-]*II\s+Total[:\s]*₹?([\d,]+\.?\d*)",
+                r"NPS\s*Tier\s*II[:\s]*₹?([\d,]+\.?\d*)"
+            ],
+            "nps_employer_contribution": [
+                r"Employer\s*Contribution[:\s]*₹?([\d,]+\.?\d*)",
+                r"80CCD\(2\)[:\s]*₹?([\d,]+\.?\d*)"
+            ],
+            "nps_financial_year": [
+                r"Financial Year[:\s]*([0-9]{4}-[0-9]{2,4})",
+                r"FY[:\s]*([0-9]{4}-[0-9]{2,4})"
+            ],
             "employee_name": [
                 r"Employee Name[:\s]*([A-Z][a-z]+ [A-Z][a-z]+)",
                 r"Name of Employee[:\s]*([A-Z][a-z]+ [A-Z][a-z]+)",
@@ -205,7 +242,8 @@ class OptimizedOllamaAnalyzer:
     def _get_cache_key(self, file_path: str) -> str:
         """Generate cache key based on file path and modification time"""
         stat = os.stat(file_path)
-        file_hash = f"{file_path}_{stat.st_mtime}_{stat.st_size}"
+        # Include schema version so code changes invalidate old cache
+        file_hash = f"{self.CACHE_SCHEMA_VERSION}|{file_path}|{stat.st_mtime}|{stat.st_size}"
         return hashlib.md5(file_hash.encode()).hexdigest()
     
     def _get_cache_path(self, cache_key: str) -> Path:
@@ -243,7 +281,11 @@ class OptimizedOllamaAnalyzer:
             for pattern in patterns:
                 matches = re.findall(pattern, text, re.IGNORECASE)
                 if matches:
-                    if field in ["gross_salary", "tax_deducted", "basic_salary", "hra", "perquisites", "interest_amount", "tds_amount", "espp_amount", "special_allowance", "other_allowances"]:
+                    if field in [
+                        "gross_salary", "tax_deducted", "basic_salary", "hra", "perquisites",
+                        "interest_amount", "tds_amount", "espp_amount", "special_allowance", "other_allowances",
+                        "nps_tier1_contribution", "nps_tier2_contribution", "nps_employer_contribution"
+                    ]:
                         # Convert amount strings to float
                         amount_str = matches[0].replace(",", "")
                         try:
@@ -251,7 +293,7 @@ class OptimizedOllamaAnalyzer:
                             break
                         except ValueError:
                             continue
-                    elif field in ["employee_name", "bank_name", "account_number"]:
+                    elif field in ["employee_name", "bank_name", "account_number", "nps_pran", "nps_subscriber", "nps_financial_year"]:
                         extracted[field] = matches[0].strip()
                         break
                     elif field in ["pan_number"]:
@@ -514,6 +556,27 @@ class OptimizedOllamaAnalyzer:
         
         return quarterly_data
     
+    def _extract_payslip_hra(self, text: str) -> float:
+        """Extract HRA amount from payslip text using multiple patterns."""
+        try:
+            patterns = [
+                r"HRA\s*[:\-]?\s*₹?([\d,]+\.?\d*)",
+                r"House\s*Rent\s*Allowance\s*[:\-]?\s*₹?([\d,]+\.?\d*)",
+                r"H\.R\.A\.?\s*[:\-]?\s*₹?([\d,]+\.?\d*)",
+                r"Allowance\s*\(HRA\)\s*[:\-]?\s*₹?([\d,]+\.?\d*)",
+            ]
+            for pat in patterns:
+                m = re.search(pat, text, re.IGNORECASE)
+                if m:
+                    amt = m.group(1).replace(',', '')
+                    try:
+                        return float(amt)
+                    except ValueError:
+                        continue
+        except Exception:
+            return 0.0
+        return 0.0
+
     def analyze_document(self, file_path: str) -> OptimizedExtractedData:
         """Analyze document with optimizations"""
         start_time = time.time()
@@ -583,6 +646,20 @@ class OptimizedOllamaAnalyzer:
         # Process quarterly data in parallel
         quarterly_data = self._process_quarterly_data_parallel(extracted_text)
         
+        # Detect payslips and extract HRA specifically if present
+        try:
+            doc_type_lower = str(base_data.get('document_type', '')).lower()
+            looks_like_payslip = any(
+                key in extracted_text.lower() for key in ["salary slip", "pay slip", "payslip", "salary statement"]
+            ) or any(key in doc_type_lower for key in ["salary_slip", "salary slip", "payslip", "salary"])
+            if looks_like_payslip:
+                hra_amount = self._extract_payslip_hra(extracted_text)
+                if hra_amount and hra_amount > 0:
+                    optimized_data['hra'] = hra_amount
+                    print(f"🧮 Extracted HRA from payslip: ₹{hra_amount:,.2f}")
+        except Exception as _e:
+            pass
+
         # Create optimized result
         optimized_result = OptimizedExtractedData(
             document_type=base_data.get('document_type', 'unknown'),
@@ -609,6 +686,11 @@ class OptimizedOllamaAnalyzer:
             account_number=optimized_data.get('account_number', base_data.get('account_number', '')),
             interest_amount=optimized_data.get('interest_amount', base_data.get('interest_amount', 0.0)),
             tds_amount=optimized_data.get('tds_amount', base_data.get('tds_amount', 0.0)),
+            # Capital gains fields (carry-over from base analyzer if present)
+            total_capital_gains=optimized_data.get('total_capital_gains', base_data.get('total_capital_gains', 0.0)),
+            long_term_capital_gains=optimized_data.get('long_term_capital_gains', base_data.get('long_term_capital_gains', 0.0)),
+            short_term_capital_gains=optimized_data.get('short_term_capital_gains', base_data.get('short_term_capital_gains', 0.0)),
+            number_of_transactions=optimized_data.get('number_of_transactions', base_data.get('number_of_transactions', 0)),
             # Investment fields
             epf_amount=optimized_data.get('epf_amount', base_data.get('epf_amount', 0.0)),
             ppf_amount=optimized_data.get('ppf_amount', base_data.get('ppf_amount', 0.0)),
@@ -617,6 +699,13 @@ class OptimizedOllamaAnalyzer:
             health_insurance=optimized_data.get('health_insurance', base_data.get('health_insurance', 0.0)),
             # Additional compatibility fields
             pan=optimized_data.get('pan_number', base_data.get('pan', '')),
+            # NPS fields
+            nps_pran=optimized_data.get('nps_pran', base_data.get('nps_pran', '')),
+            nps_subscriber=optimized_data.get('nps_subscriber', base_data.get('nps_subscriber', '')),
+            nps_financial_year=optimized_data.get('nps_financial_year', base_data.get('nps_financial_year', '')),
+            nps_tier1_contribution=optimized_data.get('nps_tier1_contribution', base_data.get('nps_tier1_contribution', 0.0)),
+            nps_tier2_contribution=optimized_data.get('nps_tier2_contribution', base_data.get('nps_tier2_contribution', 0.0)),
+            nps_employer_contribution=optimized_data.get('nps_employer_contribution', base_data.get('nps_employer_contribution', 0.0)),
             raw_text=extracted_text,
             errors=base_data.get('errors', [])
         )
