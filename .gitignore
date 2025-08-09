@@ -1,2 +1,3 @@
 tax_ai_env/
-logs/app.log
+logs/
+cache/

@@ -58,6 +58,9 @@ macOS (Homebrew):
 brew install ollama
 ollama pull llama2
 # Optional: test run (downloads if not pulled)
+ollama serve
+
+#opne new terminal and run 
 ollama run llama2
 ```
 
