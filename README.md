@@ -25,7 +25,7 @@ AI-powered assistant for Indian income tax filing using **GPT-OSS-20B**, **Llama
 - PDF report generation
 
 ### 🤖 Advanced AI
-- GPT-OSS-20B + LlamaIndex RAG
+- OLLAMA
 - Tax-only, professional responses
 - Confidence scoring and knowledge-base integration
 
@@ -82,8 +82,7 @@ Change model (optional): Update `model="llama2"` in `src/core/ollama_document_an
 # Guided setup (recommended)
 python setup_models.py
 
-# or launch will guide you if models are missing
-python launch_production.py
+
 ```
 - Full model: GPT-OSS-20B (~40GB, quantized) for best AI.
 - Lightweight options available during setup. See `MODEL_SETUP_GUIDE.md`.
