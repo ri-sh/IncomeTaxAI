@@ -138,47 +138,6 @@ Create the folder on your Desktop (auto-detected):
 3. First launch will prompt for authorization and save `google_token.json`.
 See `GOOGLE_DRIVE_OAUTH_SETUP.md` for step-by-step instructions.
 
-## 📋 Document Checklist
-
-### 🚨 **Mandatory Documents**
-- **Form 16** - TDS certificate from employer
-- **PAN Card** - Tax identification
-- **Bank Statements** - Income verification
-
-### ⚠️ **Highly Recommended (Tax-Saving)**
-- **LIC Premium Receipts** - Section 80C (up to ₹1.5L)
-- **ELSS Statements** - Section 80C equity investments
-- **PPF/EPF Statements** - Section 80C retirement savings
-- **Health Insurance Premium** - Section 80D (up to ₹75K)
-- **Home Loan Interest** - Section 24 (up to ₹2L)
-- **Interest Certificates** - Bank/FD interest income
-
-### 💡 **Optional (Additional Deductions)**
-- **Education Loan Interest** - Section 80E (no limit)
-- **Donation Receipts** - Section 80G charitable donations
-- **Capital Gains Statements** - If you sold investments
-- **Rent Receipts** - HRA exemption claim
-
-## 🏗️ Architecture (high level)
-
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   User Layer    │    │  Document       │    │   Core Tax      │
-│                 │    │  Processing     │    │   Engine        │
-│ • Streamlit UI  │◄──►│ • PDF Parser    │◄──►│ • Tax Calculator│
-│ • Chat Interface│    │ • Excel Reader  │    │ • ITR Forms     │
-│ • Form Wizard   │    │ • OCR Engine    │    │ • Validation    │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         ▼                       ▼                       ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Data Sources  │    │   AI/ML Layer   │    │ Knowledge Base  │
-│                 │    │                 │    │                 │
-│ • Local Folder  │    │ • GPT-OSS-20B   │    │ • Tax Laws      │
-│ • Google Drive  │    │ • LlamaIndex    │    │ • ITR Forms     │
-│ • Manual Upload │    │ • RAG Pipeline  │    │ • ChromaDB      │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-```
 
 ## 📊 Example Output
 
