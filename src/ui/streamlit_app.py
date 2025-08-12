@@ -13,13 +13,14 @@ from datetime import datetime
 import plotly.express as px
 import plotly.graph_objects as go
 from typing import Dict, List, Any
+import traceback
 
 # Import our AI components
 import sys
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 # Import the new integrated system
-from src.core.ollama_document_analyzer import OllamaDocumentAnalyzer, OllamaExtractedData
+from src.core.document_processing.ollama_analyzer import OllamaDocumentAnalyzer, OllamaExtractedData
 from src.core.tax_calculator import TaxCalculator
 from src.core.document_processor import DocumentProcessor
 from src.main import IncomeTaxAssistant
@@ -608,6 +609,7 @@ def show_document_analysis_tab():
                                                 
                                         except Exception as e:
                                             st.error(f"❌ Error analyzing {doc.name}: {e}")
+                                            print(traceback.format_exc())
                                             continue
                                     
                                     progress_bar.empty()
@@ -702,6 +704,7 @@ def show_document_analysis_tab():
                                         
                                 except Exception as e:
                                     st.error(f"❌ Error analyzing {file_path.name}: {e}")
+                                    print(traceback.format_exc())
                                     continue
                             
                             progress_bar.empty()
@@ -736,6 +739,7 @@ def show_document_analysis_tab():
                         
                 except Exception as e:
                     st.error(f"❌ Error analyzing documents: {e}")
+                    print(traceback.format_exc())
     
     with col2:
         # Cache controls
@@ -775,7 +779,7 @@ def show_document_analysis_tab():
 
         if st.button("📊 Export Analysis"):
             try:
-                assistant.generate_report("tax_analysis_report.json")
+                assistant.generate_report()
                 st.success("📄 Report exported successfully!")
             except Exception as e:
                 st.error(f"❌ Error exporting report: {e}")

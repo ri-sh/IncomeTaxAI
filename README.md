@@ -56,12 +56,12 @@ The app uses Ollama locally at `http://localhost:11434` with model `llama2`.
 macOS (Homebrew):
 ```bash
 brew install ollama
-ollama pull llama2
+ollama pull llama3
 # Optional: test run (downloads if not pulled)
 ollama serve
 
 #opne new terminal and run 
-ollama run llama2
+ollama run llama3
 ```
 
 Linux:
@@ -69,16 +69,16 @@ Linux:
 curl -fsSL https://ollama.com/install.sh | sh
 # Start service (systemd) or run in foreground
 sudo systemctl enable --now ollama || ollama serve &
-ollama pull llama2
+ollama pull llama3
 ```
 
 Verify:
 ```bash
 ollama list
-# Ensure 'llama2' is listed and server is running on :11434
+# Ensure 'llama3' is listed and server is running on :11434
 ```
 
-Change model (optional): Update `model="llama2"` in `src/core/ollama_document_analyzer.py` and `src/models/llamaindex_rag.py`.
+Change model (optional): Update `model="llama3"` in `src/core/ollama_document_analyzer.py` and `src/models/llamaindex_rag.py`.
 
 ### 5) (Optional) Download Hugging Face models
 ```bash
@@ -92,8 +92,6 @@ python setup_models.py
 
 ### 6) Start the app
 ```bash
-# Production launcher (checks deps, sets up dirs, starts Streamlit)
-python launch_production.py
 
 # Or directly run Streamlit UI
 streamlit run src/ui/streamlit_app.py

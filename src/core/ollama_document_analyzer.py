@@ -7,90 +7,100 @@ import json
 import re
 from pathlib import Path
 import logging
-from typing import Dict, List, Any, Optional, Tuple
-from dataclasses import dataclass, asdict
+from typing import Any, Optional, Tuple
+import dataclasses
 import fitz  # PyMuPDF for PDF text extraction
 import pandas as pd
+import camelot # Import camelot for table extraction
 from llama_index.core import Settings
 from llama_index.llms.ollama import Ollama
 
-@dataclass
+@dataclasses.dataclass
 class OllamaExtractedData:
     """Enhanced extracted data from Ollama analysis"""
-    document_type: str
-    confidence: float
-    
-    # Salary details (from Form 16)
+    document_type: str = "unknown"
+    confidence: float = 0.0
     employee_name: Optional[str] = None
     pan: Optional[str] = None
     employer_name: Optional[str] = None
     gross_salary: float = 0.0
     basic_salary: float = 0.0
-    perquisites: float = 0.0  # Added perquisites field
-    total_gross_salary: float = 0.0  # Added total gross salary field
+    perquisites: float = 0.0
+    total_gross_salary: float = 0.0
     hra_received: float = 0.0
     special_allowance: float = 0.0
     other_allowances: float = 0.0
     tax_deducted: float = 0.0
-    
-    # Bank details
     bank_name: Optional[str] = None
     account_number: Optional[str] = None
     interest_amount: float = 0.0
     tds_amount: float = 0.0
     financial_year: Optional[str] = None
-    
-    # Capital gains
     total_capital_gains: float = 0.0
     long_term_capital_gains: float = 0.0
     short_term_capital_gains: float = 0.0
     number_of_transactions: int = 0
-    
-    # Investment details
     epf_amount: float = 0.0
     ppf_amount: float = 0.0
     life_insurance: float = 0.0
     elss_amount: float = 0.0
     health_insurance: float = 0.0
-    
-    # Extracted text and analysis
     raw_text: str = ""
     extraction_method: str = "ollama_llm"
-    errors: List[str] = None
-    
-    def __post_init__(self):
-        if self.errors is None:
-            self.errors = []
+    errors: Optional[list] = None
+    def __init__(self, **kwargs):
+        for field in dataclasses.fields(self):
+            if field.name in kwargs:
+                setattr(self, field.name, kwargs[field.name])
+            else:
+                setattr(self, field.name, field.default)
 
 class OllamaDocumentAnalyzer:
-    """Enhanced document analyzer using Ollama LLM for content extraction"""
-    
-    def __init__(self):
-        self.llm = self._setup_ollama()
+
+    def __init__(self, model: str = "llama3:8b"):
+        self.model_name = model
         self.logger = logging.getLogger(__name__)
-    
-    def _setup_ollama(self) -> Optional[Ollama]:
+        self.llm = self._setup_ollama(model_name=self.model_name)
+        self.post_processing_functions = {
+            "form_16": self._post_process_form16_data,
+            "payslip": self._post_process_payslip_data,
+            "bank_interest_certificate": self._post_process_bank_interest_data,
+            "capital_gains": self._post_process_capital_gains_data,
+        }
+
+    def _post_process_payslip_data(self, json_data):
+        """Post-process payslip data to ensure correct totals"""
+        try:
+            payslip_data = self._extract_payslip_regex(json_data)
+            if payslip_data:
+                json_data.update(payslip_data)
+                json_data['extraction_method'] = 'ollama_llm_with_payslip_regex_correction'
+            return json_data
+        except Exception as e:
+            print(f"⚠️ Error in post-processing: {str(e)}")
+            return json_data
+
+
+    def _setup_ollama(self, model_name: str):
         """Setup Ollama LLM for document analysis"""
         try:
             ollama_llm = Ollama(
-                model="llama2",
+                model=model_name,
                 base_url="http://localhost:11434",
-                request_timeout=60.0,
-                temperature=0.1,  # Low temperature for consistent extraction
-                context_window=8192,  # Large context for full documents
-                num_predict=2048  # Allow detailed responses
+                request_timeout=120.0,  # Increased timeout for larger models
+                temperature=0.0,  # Set to 0 for deterministic JSON output
+                context_window=8192,
+                num_predict=2048
             )
-            
             # Test the connection
             test_response = ollama_llm.complete("Hello")
-            logging.getLogger(__name__).info("Ollama LLM ready for document analysis")
+            self.logger.info(f"Ollama LLM ({model_name}) ready for document analysis.")
             return ollama_llm
-            
         except Exception as e:
-            logging.getLogger(__name__).warning(f"Could not setup Ollama: {e}")
+            self.logger.warning(f"Could not setup Ollama with model {model_name}: {e}")
             return None
     
-    def analyze_document(self, file_path: str) -> OllamaExtractedData:
+    def analyze_document(self, file_path):
         """Analyze document using Ollama LLM to extract all relevant details"""
         
         file_path = Path(file_path)
@@ -103,10 +113,21 @@ class OllamaDocumentAnalyzer:
             )
         
         try:
-            # Extract text content from the document
-            text_content = self._extract_text_content(file_path)
             
-            if not text_content:
+            # Extract text content from the document
+            extracted_content = self._extract_text_content(file_path)
+            
+            structured_text_content = ""
+            plain_text_content = ""
+
+            if isinstance(extracted_content, tuple):
+                structured_text_content = extracted_content[0]
+                plain_text_content = extracted_content[1]
+            else:
+                structured_text_content = extracted_content
+                plain_text_content = extracted_content # For non-PDFs, structured and plain are the same
+
+            if not structured_text_content:
                 return OllamaExtractedData(
                     document_type="unknown",
                     confidence=0.0,
@@ -114,7 +135,7 @@ class OllamaDocumentAnalyzer:
                 )
             
             # Analyze with Ollama
-            extracted_data = self._analyze_with_ollama(file_path.name, text_content, file_path)
+            extracted_data = self._analyze_with_ollama(file_path.name, structured_text_content, plain_text_content, file_path)
             
             # Add file path to the data for fallback processing
             if hasattr(extracted_data, 'raw_text'):
@@ -134,7 +155,7 @@ class OllamaDocumentAnalyzer:
                 extraction_method="ollama_llm_error"
             )
     
-    def _extract_text_content(self, file_path: Path) -> str:
+    def _extract_text_content(self, file_path):
         """Extract text content from different file types"""
         
         file_ext = file_path.suffix.lower()
@@ -150,20 +171,83 @@ class OllamaDocumentAnalyzer:
             print(f"Error extracting text from {file_path}: {e}")
             return ""
     
-    def _extract_pdf_text(self, file_path: Path) -> str:
-        """Extract text from PDF using PyMuPDF"""
+    def _extract_pdf_text(self, file_path):
+        """Extract text from PDF using PyMuPDF and tables using Camelot, preserving some layout information"""
+        full_text = []
+        camelot_tables_text = []
+
+        # Set Ghostscript path for Camelot
+
+        try:
+            # Attempt to extract tables using Camelot
+            # flavors: 'lattice' for tables with lines, 'stream' for tables without lines
+            # pages: 'all' to extract from all pages
+            # suppress_stdout: True to prevent Camelot from printing to console
+            print(f"📊 Attempting Camelot table extraction from {file_path.name}...")
+            tables = camelot.read_pdf(str(file_path), pages='all', flavor='lattice', suppress_stdout=True)
+            if not tables:
+                tables = camelot.read_pdf(str(file_path), pages='all', flavor='stream', suppress_stdout=True)
+
+            if tables:
+                print(f"✅ Camelot extracted {len(tables)} table(s).")
+                for i, table in enumerate(tables):
+                    # Convert table to a string format (e.g., CSV or Markdown)
+                    # Using CSV for simplicity, can be changed to Markdown if preferred by LLM
+                    camelot_tables_text.append(f"\n--- TABLE {i+1} ---")
+                    camelot_tables_text.append(table.df.to_csv(index=False))
+                    camelot_tables_text.append("\n--- END TABLE ---")
+            else:
+                print("❌ Camelot found no tables or failed to extract.")
+
+        except Exception as e:
+            print(f"⚠️ Error during Camelot table extraction: {e}")
+            # Continue with PyMuPDF even if Camelot fails
+            pass
+
         try:
             doc = fitz.open(file_path)
-            text = ""
-            for page in doc:
-                text += page.get_text()
+            for page_num, page in enumerate(doc):
+                full_text.append(f"\n--- Page {page_num + 1} ---")
+
+                # Get text blocks with coordinates
+                blocks = page.get_text("blocks")  # (x0, y0, x1, y1, text, block_no, block_type)
+
+                # Sort blocks by y-coordinate (top to bottom) and then by x-coordinate (left to right)
+                blocks.sort(key=lambda block: (block[1], block[0]))
+
+                current_y = -1
+                for block in blocks:
+                    x0, y0, x1, y1, text, block_no, block_type = block
+
+                    if not text.strip():
+                        continue
+
+                    # Add a newline if there's a significant vertical jump (new paragraph/line)
+                    if current_y == -1 or (y0 - current_y) > 15:  # Threshold for new line/paragraph
+                        full_text.append("\n")
+
+                    # Add indentation based on x-coordinate
+                    indentation = " " * int(x0 / 10)  # Roughly 1 space per 10 units
+                    full_text.append(f"{indentation}{text.strip()}")
+                    current_y = y1
+                full_text.append("\n")
             doc.close()
-            return text
+
+            # Combine PyMuPDF text and Camelot tables
+            combined_text = "\n".join(full_text)
+            if camelot_tables_text:
+                combined_text = combined_text + "\n\n--- EXTRACTED TABLES ---" + "\n".join(camelot_tables_text)
+
+            return combined_text
+
         except Exception as e:
-            print(f"Error extracting PDF text: {e}")
+            print(f"Error extracting PDF text with layout (PyMuPDF): {e}")
+            # If PyMuPDF also fails, return only Camelot tables if any, or empty string
+            if camelot_tables_text:
+                return "\n".join(camelot_tables_text)
             return ""
     
-    def _extract_excel_text(self, file_path: Path) -> str:
+    def _extract_excel_text(self, file_path):
         """Extract text representation from Excel file"""
         try:
             # For capital gains reports, we need to find the actual data section
@@ -172,6 +256,7 @@ class OllamaDocumentAnalyzer:
                 
                 # First read without header to see the structure
                 df = pd.read_excel(file_path, header=None)
+                print(f"DEBUG: Raw Excel DataFrame (header=None):\n{df.to_string()}") # Add this line
                 print("📊 Looking for data section...")
                 
                 # Find the start of data section
@@ -819,13 +904,12 @@ class OllamaDocumentAnalyzer:
                     
                     # Use Ollama to classify columns
                     print(f"\n🤖 Classifying columns for section: {section_name}")
-                    classified_cols = self._classify_excel_columns(section_df, section_name)
                     
                     # Use classified columns
-                    gain_cols = classified_cols.get('gain_cols', [])
-                    date_cols = classified_cols.get('date_cols', [])
-                    type_cols = classified_cols.get('type_cols', [])
-                    amount_cols = classified_cols.get('amount_cols', [])
+                    gain_cols = []
+                    date_cols = []
+                    type_cols = []
+                    amount_cols = []
                     
                     print(f"📊 Found columns in {section_name}:")
                     print(f"   Gain columns: {gain_cols}")
@@ -1006,105 +1090,95 @@ class OllamaDocumentAnalyzer:
             print(f"Error extracting Excel text: {e}")
             return ""
     
-    def _analyze_with_ollama(self, filename: str, text_content: str, file_path: str = None) -> OllamaExtractedData:
-        """Analyze document content with Ollama LLM"""
+    def _analyze_with_ollama(self, filename: str, structured_text_content: str, plain_text_content: str, file_path: str = None):
+        """Analyze document content with Ollama LLM using structured JSON output."""
         try:
             # Determine document type and create specific prompt
-            if "form 16" in filename.lower() or "form16" in filename.lower() or "form-16" in filename.lower():
-                prompt = self._create_form16_specific_prompt(filename, text_content)
-            elif "bank" in filename.lower() and "interest" in filename.lower():
-                prompt = self._create_bank_interest_prompt(filename, text_content)
-            elif "capital" in filename.lower() and "gains" in filename.lower():
-                prompt = self._create_capital_gains_prompt(filename, text_content)
+            doc_type_prompt, response_schema = self._get_prompt_and_schema(filename, structured_text_content)
+
+            if not doc_type_prompt:
+                prompt = self._create_general_prompt(filename, structured_text_content)
             else:
-                prompt = self._create_general_prompt(filename, text_content)
-            
-            # Get response from Ollama
-            response = self.llm.complete(prompt)
+                prompt = doc_type_prompt
+
+            # Get response from Ollama in JSON format
+            response = self.llm.complete(prompt, format="json")
             response_text = response.text.strip()
-            
-            # Try to parse JSON response
+            print(f"DEBUG: Raw LLM response: {response_text}")
+
+            # Parse the JSON response
             json_data = self._parse_json_response(response_text)
-            
+
             if json_data:
-                # Add file path and raw text to the data for fallback processing
+                
+                # Convert known numeric fields from string to float if they are strings
+                numeric_fields = [
+                    "gross_salary", "basic_salary", "perquisites", "total_gross_salary",
+                    "hra_received", "special_allowance", "other_allowances", "tax_deducted",
+                    "interest_amount", "tds_amount", "total_capital_gains",
+                    "long_term_capital_gains", "short_term_capital_gains",
+                    "epf_amount", "ppf_amount", "life_insurance", "elss_amount", "health_insurance",
+                    "nps_tier1", "nps_1b", "nps_employer"
+                ]
+                for field in numeric_fields:
+                    if field in json_data and isinstance(json_data[field], str):
+                        try:
+                            json_data[field] = float(json_data[field].replace(",", ""))
+                        except ValueError:
+                            self.logger.warning(f"Could not convert {field} '{json_data[field]}' to float.")
+                            json_data[field] = 0.0 # Default to 0.0 on conversion error
+
+                # Ensure document_type is set correctly based on filename if LLM fails to provide it
+                if json_data.get('document_type') in [None, ""]:
+                    filename_lower = filename.lower()
+                    if "form 16" in filename_lower or "form16" in filename_lower:
+                        json_data['document_type'] = "form_16"
+                    elif "payslip" in filename_lower:
+                        json_data['document_type'] = "form_16" # Treat payslips as form_16 for aggregation
+                    elif "bank" in filename_lower and "interest" in filename_lower:
+                        json_data['document_type'] = "bank_interest_certificate"
+                    elif "capital" in filename_lower and "gains" in filename_lower:
+                        json_data['document_type'] = "capital_gains"
+                    elif "nps" in filename_lower or "investment" in filename_lower:
+                        json_data['document_type'] = "investment"
+                    else:
+                        json_data['document_type'] = "unknown"
+
+                # Add file path and raw text for fallback processing
                 if file_path:
-                    json_data['file_path'] = file_path
-                json_data['raw_text'] = text_content  # Add raw text for regex fallback
-                
-                # Post-process Form16 data to ensure correct totals
-                if json_data.get('document_type') == 'form_16':
-                    # If employer name missing, try regex fallback using raw text before post-processing
-                    if (not json_data.get('employer_name')) and text_content:
-                        inferred_employer = self._extract_employer_name_regex(text_content)
-                        if inferred_employer:
-                            json_data['employer_name'] = inferred_employer
+                    json_data['file_path'] = str(file_path)
+                json_data['raw_text'] = plain_text_content # Use plain text for raw_text
+
+                # Post-process data if necessary
+                doc_type = json_data.get('document_type', 'unknown')
+                if doc_type == 'form_16':
                     json_data = self._post_process_form16_data(json_data)
-                
-                # Post-process bank interest certificate data to ensure correct totals
-                if json_data.get('document_type') == 'bank_interest_certificate':
+                elif doc_type == 'bank_interest_certificate':
                     json_data = self._post_process_bank_interest_data(json_data)
-                
-                # Post-process capital gains data to ensure correct totals
-                if json_data.get('document_type') == 'capital_gains':
+                elif doc_type == 'capital_gains':
                     json_data = self._post_process_capital_gains_data(json_data)
-                
-                # Create OllamaExtractedData from JSON
-                extracted_data = OllamaExtractedData(
-                    document_type=json_data.get('document_type', 'unknown'),
-                    confidence=float(json_data.get('confidence', 0.7)),
-                    
-                    employee_name=json_data.get('employee_name'),
-                    pan=json_data.get('pan'),
-                    employer_name=json_data.get('employer_name'),
-                    gross_salary=float(json_data.get('gross_salary', 0)),
-                    basic_salary=float(json_data.get('basic_salary', 0)),
-                    perquisites=float(json_data.get('perquisites', 0)), # Use perquisites from JSON
-                    total_gross_salary=float(json_data.get('total_gross_salary', 0)), # Use total_gross_salary from JSON
-                    hra_received=float(json_data.get('hra_received', 0)),
-                    special_allowance=float(json_data.get('special_allowance', 0)),
-                    other_allowances=float(json_data.get('other_allowances', 0)),
-                    tax_deducted=float(json_data.get('tax_deducted', 0)),
-                    
-                    bank_name=json_data.get('bank_name'),
-                    account_number=json_data.get('account_number'),
-                    interest_amount=float(json_data.get('interest_amount', 0)),
-                    tds_amount=float(json_data.get('tds_amount', 0)),
-                    financial_year=json_data.get('financial_year'),
-                    
-                    total_capital_gains=float(json_data.get('total_capital_gains', 0)),
-                    long_term_capital_gains=float(json_data.get('long_term_capital_gains', 0)),
-                    short_term_capital_gains=float(json_data.get('short_term_capital_gains', 0)),
-                    number_of_transactions=int(json_data.get('number_of_transactions', 0)),
-                    
-                    epf_amount=float(json_data.get('epf_amount', 0)),
-                    ppf_amount=float(json_data.get('ppf_amount', 0)),
-                    life_insurance=float(json_data.get('life_insurance', 0)),
-                    elss_amount=float(json_data.get('elss_amount', 0)),
-                    health_insurance=float(json_data.get('health_insurance', 0)),
-                    
-                    raw_text=text_content[:1000],  # Store first 1000 chars
-                    extraction_method="ollama_llm_full_analysis",
-                    errors=[]
-                )
-                
+
+                extracted_data = OllamaExtractedData(**json_data)
+                extracted_data.extraction_method = f"ollama_llm_json_{self.model_name}"
                 return extracted_data
+
             else:
                 return OllamaExtractedData(
                     document_type="unknown",
                     confidence=0.0,
                     errors=["Could not parse LLM response as JSON"],
-                    raw_text=text_content[:1000],
-                    extraction_method="ollama_llm_failed"
+                    raw_text=plain_text_content[:1000],
+                    extraction_method=f"ollama_llm_failed_{self.model_name}"
                 )
-                
+
         except Exception as e:
+            self.logger.exception(f"Ollama analysis error: {e}")
             return OllamaExtractedData(
                 document_type="unknown",
                 confidence=0.0,
                 errors=[f"Ollama analysis error: {str(e)}"],
-                raw_text=text_content[:1000],
-                extraction_method="ollama_llm_error"
+                raw_text=plain_text_content[:1000],
+                extraction_method=f"ollama_llm_error_{self.model_name}"
             )
 
     def _extract_form16_perquisites_regex(self, json_data):
@@ -1124,7 +1198,7 @@ class OllamaDocumentAnalyzer:
             
             # Try more specific patterns based on actual structure
             # Pattern 1: Look for line 17 stock options specifically with robust number matching
-            specific_perquisites_pattern = r'17\.\s*Stock options.*?(\d{6}(?:\.\d{2})?)\s*0\.00\s*(\d{6}(?:\.\d{2})?)'
+            specific_perquisites_pattern = r'17\.\s*Stock options.*?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*0\.00\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)'
             specific_match = re.search(specific_perquisites_pattern, raw_text, re.IGNORECASE | re.DOTALL)
             
             if specific_match:
@@ -1133,7 +1207,7 @@ class OllamaDocumentAnalyzer:
                 
                 # Look for basic salary with exact pattern from analysis
                 # Use a robust pattern that looks for the complete number (7-8 digits)
-                basic_pattern = r'Income under the head Salaries.*?(\d{7,8}(?:\.\d{2})?)'
+                basic_pattern = r'Income under the head Salaries.*?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)'
                 basic_match = re.search(basic_pattern, raw_text, re.IGNORECASE | re.DOTALL)
                 
                 basic_salary = 0.0
@@ -1152,7 +1226,7 @@ class OllamaDocumentAnalyzer:
             
             # Try even more precise patterns
             # Look for the exact structure: "17. Stock options (non-qualified options) other than ESOP in col 16 above" followed by numbers
-            precise_perquisites_pattern = r'17\.\s*Stock options \(non-qualified options\) other than ESOP in col 16\s*above\s*(\d{6}(?:\.\d{2})?)\s*0\.00\s*(\d{6}(?:\.\d{2})?)'
+            precise_perquisites_pattern = r'17\.\s*Stock options \(non-qualified options\) other than ESOP in col 16\s*above\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*0\.00\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)'
             precise_match = re.search(precise_perquisites_pattern, raw_text, re.IGNORECASE | re.DOTALL)
             
             if precise_match:
@@ -1160,7 +1234,7 @@ class OllamaDocumentAnalyzer:
                 print(f"✅ Found perquisites by precise pattern: ₹{perquisites:,.2f}")
                 
                 # Look for basic salary with robust pattern
-                precise_basic_pattern = r'Income under the head Salaries.*?(\d{7,8}(?:\.\d{2})?)'
+                precise_basic_pattern = r'Income under the head Salaries.*?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)'
                 precise_basic_match = re.search(precise_basic_pattern, raw_text, re.IGNORECASE | re.DOTALL)
                 
                 basic_salary = 0.0
@@ -1194,7 +1268,7 @@ class OllamaDocumentAnalyzer:
                 for num_str in numbers:
                     try:
                         num = float(num_str.replace(',', ''))
-                        if num > 100000:  # Likely perquisites if > 1 lakh
+                        if num > 1000:  # Likely perquisites if > 1000
                             perquisites_candidates.append(num)
                     except:
                         continue
@@ -1211,7 +1285,7 @@ class OllamaDocumentAnalyzer:
                     for num_str in salary_numbers:
                         try:
                             num = float(num_str.replace(',', ''))
-                            if num > 1000000:  # Likely basic salary if > 10 lakh
+                            if num > 100000:  # Likely basic salary if > 1 lakh
                                 basic_salary_candidates.append(num)
                         except:
                             continue
@@ -1240,7 +1314,7 @@ class OllamaDocumentAnalyzer:
                 value1 = float(any_match.group(1).replace(',', ''))
                 value2 = float(any_match.group(2).replace(',', ''))
                 
-                if value2 > 100000:  # Likely perquisites if > 1 lakh
+                if value2 > 1000:  # Likely perquisites if > 1000
                     perquisites = value2
                     print(f"✅ Found potential perquisites: ₹{perquisites:,.2f}")
                     
@@ -1428,9 +1502,105 @@ class OllamaDocumentAnalyzer:
             print(f"⚠️ Error in capital gains regex extraction: {e}")
             return None
 
-    def _post_process_form16_data(self, json_data: Dict) -> Dict:
+    def _extract_form16_quarterly_data_regex(self, json_data):
+        """Extract Form16 quarterly data using regex."""
+        raw_text = json_data.get('raw_text', '')
+        if not raw_text:
+            print("⚠️ No raw text available for quarterly data extraction")
+            return None
+
+        print("🔍 Attempting Form16 quarterly data extraction with regex...")
+        quarterly_data = {}
+        total_salary = 0.0
+        total_tax = 0.0
+
+        # Patterns for quarterly salary and tax (assuming Q1, Q2, Q3, Q4 structure)
+        # Example: "Q1 Salary: 100000.00, Tax: 10000.00" or "Q1: Salary 100000.00 Tax 10000.00"
+        quarter_patterns = {
+            "Q1": r"(?:Q1|Quarter 1|1st Quarter|first quarter)[:\s]*Salary[:\s]*₹?([\d,]+\.?\d*)[,\s]*Tax[:\s]*₹?([\d,]+\.?\d*)",
+            "Q2": r"(?:Q2|Quarter 2|2nd Quarter|second quarter)[:\s]*Salary[:\s]*₹?([\d,]+\.?\d*)[,\s]*Tax[:\s]*₹?([\d,]+\.?\d*)",
+            "Q3": r"(?:Q3|Quarter 3|3rd Quarter|third quarter)[:\s]*Salary[:\s]*₹?([\d,]+\.?\d*)[,\s]*Tax[:\s]*₹?([\d,]+\.?\d*)",
+            "Q4": r"(?:Q4|Quarter 4|4th Quarter|fourth quarter)[:\s]*Salary[:\s]*₹?([\d,]+\.?\d*)[,\s]*Tax[:\s]*₹?([\d,]+\.?\d*)",
+        }
+
+        for quarter, pattern in quarter_patterns.items():
+            match = re.search(pattern, raw_text, re.IGNORECASE | re.DOTALL)
+            if match:
+                try:
+                    salary = float(match.group(1).replace(',', ''))
+                    tax = float(match.group(2).replace(',', ''))
+                    quarterly_data[quarter] = {"salary": salary, "tax": tax}
+                    total_salary += salary
+                    total_tax += tax
+                    print(f"✅ Extracted {quarter}: Salary ₹{salary:,.2f}, Tax ₹{tax:,.2f}")
+                except ValueError:
+                    print(f"⚠️ Could not parse numeric values for {quarter}")
+                    continue
+
+        if quarterly_data:
+            print(f"✅ Total Salary from Quarterly Data: ₹{total_salary:,.2f}")
+            print(f"✅ Total Tax from Quarterly Data: ₹{total_tax:,.2f}")
+            return {
+                'total_salary': total_salary,
+                'total_tax': total_tax,
+                'quarterly_breakdown': quarterly_data
+            }
+        else:
+            print("❌ No quarterly data found using regex patterns.")
+            return None
+
+    def _extract_payslip_regex(self, json_data):
+        """Extract payslip data using regex as fallback"""
+        try:
+            raw_text = json_data.get('raw_text', '')
+            if not raw_text:
+                print("⚠️ No raw text available for payslip regex extraction")
+                return None
+
+            print("🔍 Attempting payslip extraction with regex...")
+
+            # Patterns for payslip data
+            patterns = {
+                'employee_name': [r'Employee Name[:\s]*([A-Za-z\s]+)'],
+                'gross_salary': [r'Gross Salary[:\s]*₹?([\d,]+\.?\d*)'],
+                'tax_deducted': [r'Tax Deduction[:\s]*₹?([\d,]+\.?\d*)', r'Income Tax[:\s]*₹?([\d,]+\.?\d*)'],
+                'pan': [r'PAN[:\s]*([A-Z0-9]{10})'],
+                'epf_amount': [r'EPF Contribution[:\s]*₹?([\d,]+\.?\d*)', r'EPF[:\s]*₹?([\d,]+\.?\d*)'],
+            }
+
+            extracted_data = {}
+
+            for field, pattern_list in patterns.items():
+                for pattern in pattern_list:
+                    match = re.search(pattern, raw_text, re.IGNORECASE)
+                    if match:
+                        value = match.group(1).strip()
+                        if field in ['gross_salary', 'tax_deducted', 'epf_amount']:
+                            try:
+                                value = float(value.replace(',', ''))
+                            except:
+                                value = 0.0
+                        extracted_data[field] = value
+                        print(f"✅ Extracted {field}: {value}")
+                        break
+            
+            return extracted_data
+
+        except Exception as e:
+            print(f"❌ Error in payslip regex extraction: {str(e)}")
+            return None
+
+    def _post_process_form16_data(self, json_data):
         """Post-process Form16 data to ensure correct totals"""
         try:
+            # If this is a payslip, use the payslip regex extractor
+            if "payslip" in json_data.get('file_path', '').lower():
+                payslip_data = self._extract_payslip_regex(json_data)
+                if payslip_data:
+                    json_data.update(payslip_data)
+                    json_data['extraction_method'] = 'ollama_llm_with_payslip_regex_correction'
+                return json_data
+
             # First, try to extract perquisites from Part B
             perquisites_data = self._extract_form16_perquisites_regex(json_data)
             
@@ -1509,7 +1679,7 @@ class OllamaDocumentAnalyzer:
             print(f"⚠️ Error in post-processing: {str(e)}")
             return json_data
 
-    def _post_process_bank_interest_data(self, json_data: Dict) -> Dict:
+    def _post_process_bank_interest_data(self, json_data):
         """Post-process bank interest certificate data to ensure correct totals"""
         try:
             # Try regex extraction for bank interest certificate
@@ -1545,7 +1715,7 @@ class OllamaDocumentAnalyzer:
             print(f"❌ Error in bank interest post-processing: {str(e)}")
             return json_data
 
-    def _post_process_capital_gains_data(self, json_data: Dict) -> Dict:
+    def _post_process_capital_gains_data(self, json_data):
         """Post-process capital gains data to ensure correct totals"""
         try:
             # Always try regex extraction for capital gains to get accurate totals
@@ -1649,355 +1819,219 @@ class OllamaDocumentAnalyzer:
             print(f"❌ Error in capital gains post-processing: {str(e)}")
             return json_data
 
-    def _create_form16_specific_prompt(self, filename: str, text_content: str) -> str:
-        """Create Form16-specific prompt with focus on quarterly breakdowns"""
-        return f"""
-You are an expert Indian Form16 analyzer. Extract ONLY the financial data from this Form16 document.
+    def _get_prompt_and_schema(self, filename: str, text_content: str):
+        """Determines the prompt and response schema based on the filename."""
+        filename_lower = filename.lower()
+        prompt = None
+        schema = None
 
-DOCUMENT: {filename}
+        # Base schema for all documents
+        base_schema = {
+            "document_type": "string",
+            "confidence": "float",
+            "pan": "string",
+            "employee_name": "string",
+        }
 
-CONTENT:
-{text_content[:15000]}... (truncated if longer)
-
-CRITICAL INSTRUCTIONS FOR FORM16:
-1. Find the "Summary of amount paid/credited and tax deducted" table
-2. Look for this EXACT table structure with 5 columns:
-   Quarter | Receipt Number | Amount of tax deducted | Amount of tax deposited | Amount paid/credited
-   Q1      | [Receipt Number] | [Tax Amount]           | [Deposited Amount]      | [Salary Amount]
-   Q2      | [Receipt Number] | [Tax Amount]           | [Deposited Amount]      | [Salary Amount]
-   Q3      | [Receipt Number] | [Tax Amount]           | [Deposited Amount]      | [Salary Amount]
-   Q4      | [Receipt Number] | [Tax Amount]           | [Deposited Amount]      | [Salary Amount]
-   Total   |                 | [Total Tax]            | [Total Deposited]       | [Total Salary]
-
-3. Extract ALL 4 quarters (Q1, Q2, Q3, Q4) with their exact values from the document
-4. SUM ALL 4 QUARTERS for total salary and total tax
-5. Extract employee name, PAN, employer name
-
-IMPORTANT - DO NOT CONFUSE SALARY WITH TAX:
-- SALARY = "Amount paid/credited" (LAST COLUMN - what employee gets paid)
-- TAX = "Amount of tax deducted" (3rd COLUMN - what employer deducts as TDS)
-- These are DIFFERENT amounts - salary is usually much higher than tax
-- Look for the actual numbers in the document, do not make up values
-
-EXTRACT in JSON format (use exact numbers found in the document):
-{{
-    "document_type": "form_16",
-    "confidence": 0.9,
-    
-    "employee_name": "EXTRACT_FROM_DOCUMENT",
-    "pan": "EXTRACT_FROM_DOCUMENT", 
-    "employer_name": "EXTRACT_FROM_DOCUMENT",
-    "gross_salary": 0.0,  // SUM of ALL 4 quarters "Amount paid/credited" (LAST COLUMN)
-    "tax_deducted": 0.0,  // SUM of ALL 4 quarters "Amount of tax deducted" (3rd COLUMN)
-    
-    // Quarterly breakdown (extract ALL 4 quarters with exact values from document)
-    "q1_salary": 0.0,     // Q1 "Amount paid/credited" (LAST COLUMN)
-    "q1_tax": 0.0,        // Q1 "Amount of tax deducted" (3rd COLUMN)
-    "q2_salary": 0.0,     // Q2 "Amount paid/credited" (LAST COLUMN)
-    "q2_tax": 0.0,        // Q2 "Amount of tax deducted" (3rd COLUMN)
-    "q3_salary": 0.0,     // Q3 "Amount paid/credited" (LAST COLUMN)
-    "q3_tax": 0.0,        // Q3 "Amount of tax deducted" (3rd COLUMN)
-    "q4_salary": 0.0,     // Q4 "Amount paid/credited" (LAST COLUMN)
-    "q4_tax": 0.0,        // Q4 "Amount of tax deducted" (3rd COLUMN)
-    
-    // Other fields (use 0 if not found)
-    "basic_salary": 0.0,
-    "perquisites": 0.0,
-    "total_gross_salary": 0.0,
-    "hra_received": 0.0,
-    "special_allowance": 0.0,
-    "other_allowances": 0.0,
-    "espp_amount": 0.0,
-    "bank_name": null,
-    "interest_amount": 0.0,
-    "total_capital_gains": 0.0
-}}
-
-CRITICAL RULES:
-1. gross_salary = SUM of ALL 4 quarters "Amount paid/credited" (LAST COLUMN)
-2. tax_deducted = SUM of ALL 4 quarters "Amount of tax deducted" (3rd COLUMN)
-3. SALARY amounts are usually much larger than TAX amounts
-4. Employee name is in "Name and address of the Employee" section
-5. PAN is in "PAN of the Employee" section
-6. Extract ONLY what you find in the document, do not use example values
-7. MUST find and extract ALL 4 quarters (Q1, Q2, Q3, Q4) before calculating totals
-8. Look for the exact table with Q1, Q2, Q3, Q4 rows and extract each quarter's values
-9. If you cannot find the quarterly breakdown, set all quarterly values to 0
-
-ADDITIONAL FORM16 FIELDS TO EXTRACT:
-10. Look for "Basic Salary" or "Basic Pay" in the document
-11. Look for "HRA" or "House Rent Allowance" in the document
-12. Look for "Special Allowance" or "Special Pay" in the document
-13. Look for "Other Allowances" or "Additional Allowances" in the document
-14. Look for "ESPP" or "Employee Stock Purchase Plan" in the document
-15. Look for "Perquisites" or "Perks" in the document
-16. Extract these values with their exact amounts from the document
-
-Respond with ONLY the JSON object, no other text or explanations.
-"""
-
-    def _extract_form16_quarterly_data_regex(self, json_data):
-        """Extract quarterly data using regex as fallback"""
-        try:
-            raw_text = json_data.get('raw_text', '')
-            file_path = json_data.get('file_path', '')
-            
-            if not raw_text:
-                print("⚠️ No raw text available for regex extraction")
-                return None
-            
-            print(f"🔍 Attempting regex extraction on text length: {len(raw_text)}")
-            
-            # Look for the quarterly table pattern
-            # Pattern: Q1 QVSDURWF 334967.00 334967.00 1370780.00
-            quarterly_pattern = r'Q1\s+[A-Z0-9]+\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s*Q2\s+[A-Z0-9]+\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s*Q3\s+[A-Z0-9]+\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s*Q4\s+[A-Z0-9]+\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)'
-            
-            match = re.search(quarterly_pattern, raw_text, re.DOTALL)
-            
-            if match:
-                print("✅ Found quarterly data with improved pattern")
-                
-                # Extract values (columns are: Tax Deducted, Tax Deposited, Amount Paid/Credited)
-                q1_tax = float(match.group(1).replace(',', ''))
-                q1_salary = float(match.group(3).replace(',', ''))  # Amount Paid/Credited is salary
-                
-                q2_tax = float(match.group(4).replace(',', ''))
-                q2_salary = float(match.group(6).replace(',', ''))
-                
-                q3_tax = float(match.group(7).replace(',', ''))
-                q3_salary = float(match.group(9).replace(',', ''))
-                
-                q4_tax = float(match.group(10).replace(',', ''))
-                q4_salary = float(match.group(12).replace(',', ''))
-                
-                # Validate data
-                total_salary = q1_salary + q2_salary + q3_salary + q4_salary
-                total_tax = q1_tax + q2_tax + q3_tax + q4_tax
-                
-                print(f"✅ Regex extracted quarterly data:")
-                print(f"   Q1: Salary ₹{q1_salary:,.2f}, Tax ₹{q1_tax:,.2f}")
-                print(f"   Q2: Salary ₹{q2_salary:,.2f}, Tax ₹{q2_tax:,.2f}")
-                print(f"   Q3: Salary ₹{q3_salary:,.2f}, Tax ₹{q3_tax:,.2f}")
-                print(f"   Q4: Salary ₹{q4_salary:,.2f}, Tax ₹{q4_tax:,.2f}")
-                print(f"   Total: Salary ₹{total_salary:,.2f}, Tax ₹{total_tax:,.2f}")
-                
-                return {
-                    'q1_salary': q1_salary,
-                    'q1_tax': q1_tax,
-                    'q2_salary': q2_salary,
-                    'q2_tax': q2_tax,
-                    'q3_salary': q3_salary,
-                    'q3_tax': q3_tax,
-                    'q4_salary': q4_salary,
-                    'q4_tax': q4_tax,
-                    'total_salary': total_salary,
-                    'total_tax': total_tax
-                }
-            else:
-                print("❌ No quarterly pattern found in text")
-                # Try to find any Q1, Q2, Q3, Q4 patterns
-                q1_match = re.search(r'Q1[^0-9]*?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', raw_text)
-                if q1_match:
-                    print(f"Found Q1 pattern but full table not matched")
-                return None
-            
-        except Exception as e:
-            print(f"❌ Error in regex extraction: {str(e)}")
-            return None
-
-    def _create_bank_interest_prompt(self, filename: str, text_content: str) -> str:
-        """Create bank interest certificate specific prompt"""
-        return f"""
-You are an expert Indian bank interest certificate analyzer. Extract ONLY the financial data from this document.
-
-DOCUMENT: {filename}
-
-CONTENT:
-{text_content[:12000]}... (truncated if longer)
-
-CRITICAL INSTRUCTIONS FOR BANK INTEREST CERTIFICATE:
-1. Find the interest certificate table with columns: Deposit Number, Branch Name, Principal Amount, Interest Amount, Accrued Interest, Tax Deducted
-2. Extract the TOTAL row at the bottom of the table
-3. Extract bank name from "Branch Name" column
-4. Extract total interest amount from "Interest Amount" column in TOTAL row
-5. Extract total TDS amount from "Tax Deducted" column in TOTAL row
-6. Extract PAN from the document header
-7. Extract customer name from "Customer Name" field
-
-EXTRACT in JSON format (use exact numbers found in the document):
-{{
-    "document_type": "bank_interest_certificate",
-    "confidence": 0.85,
-    
-    "bank_name": "EXTRACT_FROM_BRANCH_NAME_COLUMN",
-    "account_number": "EXTRACT_FROM_DEPOSIT_NUMBER_COLUMN",
-    "pan": "EXTRACT_FROM_PAN_FIELD",
-    "interest_amount": 0.0,  // Total from "Interest Amount" column in TOTAL row
-    "tds_amount": 0.0,       // Total from "Tax Deducted" column in TOTAL row
-    "financial_year": "EXTRACT_FROM_PERIOD_FIELD",
-    
-    // Other fields (use 0 if not found)
-    "employee_name": null,
-    "employer_name": null,
-    "gross_salary": 0.0,
-    "tax_deducted": 0.0,
-    "total_capital_gains": 0.0
-}}
-
-CRITICAL RULES:
-1. Extract ONLY what you find in the document
-2. Do not use example values or make up numbers
-3. Look for the TOTAL row at the bottom of the table
-4. Interest amount is the sum of all "Interest Amount" values
-5. TDS amount is the sum of all "Tax Deducted" values
-6. Bank name is the "Branch Name" (usually same for all rows)
-7. Account number can be any of the "Deposit Number" values
-
-Respond with ONLY the JSON object, no other text or explanations.
-"""
-
-    def _create_capital_gains_prompt(self, filename: str, text_content: str) -> str:
-        """Create capital gains specific prompt"""
-        return f"""
-You are an expert Indian capital gains analyzer. Extract ONLY the financial data from this document.
-
-DOCUMENT: {filename}
-
-CONTENT:
-{text_content[:8000]}... (truncated if longer)
-
-CRITICAL INSTRUCTIONS FOR CAPITAL GAINS:
-1. Find the capital gains summary section
-2. Extract total capital gains (net gains after losses)
-3. Extract long-term capital gains (LTCG)
-4. Extract short-term capital gains (STCG)
-5. Count number of transactions
-6. Extract employee name and PAN if available
-
-EXTRACT in JSON format (use exact numbers found in the document):
-{{
-    "document_type": "capital_gains",
-    "confidence": 0.85,
-    
-    "total_capital_gains": 0.0,      // Net total (gains - losses)
-    "long_term_capital_gains": 0.0,  // LTCG (held > 12 months)
-    "short_term_capital_gains": 0.0, // STCG (held <= 12 months)
-    "number_of_transactions": 0,     // Total number of transactions
-    
-    "employee_name": "EXTRACT_FROM_DOCUMENT",
-    "pan": "EXTRACT_FROM_DOCUMENT",
-    
-    // Other fields (use 0 if not found)
-    "employer_name": null,
-    "gross_salary": 0.0,
-    "tax_deducted": 0.0,
-    "bank_name": null,
-    "interest_amount": 0.0
-}}
-
-CRITICAL RULES:
-1. Extract ONLY what you find in the document
-2. Do not use example values or make up numbers
-3. Total capital gains = sum of all gains minus sum of all losses
-4. LTCG = gains from assets held more than 12 months
-5. STCG = gains from assets held 12 months or less
-6. Count all buy/sell transactions in the period
-7. Look for specific patterns like:
-   - "Short Term P&L: -147459.51" → short_term_capital_gains = -147459.51
-   - "Long Term P&L: 166511.16" → long_term_capital_gains = 166511.16
-   - "Intraday P&L: 4" → intraday gains
-   - "Dividends: 13427.85" → dividend income
-8. Calculate total_capital_gains = long_term_capital_gains + short_term_capital_gains
-
-Respond with ONLY the JSON object, no other text or explanations.
-"""
-
-    def _classify_excel_columns(self, df: pd.DataFrame, section_name: str = None) -> Dict[str, List[str]]:
-        """Use Ollama to classify Excel columns based on their content"""
-        try:
-            # Prepare sample data for each column
-            column_samples = {}
-            for col in df.columns:
-                # Get non-null sample values
-                samples = df[col].dropna().head(5).tolist()
-                if samples:
-                    column_samples[str(col)] = samples
-            
-            # Create classification prompt
-            prompt = f"""
-You are an expert Indian tax document analyzer. Classify these Excel columns based on their content.
-
-CONTEXT:
-{'Section: ' + section_name if section_name else 'Excel file columns'}
-
-COLUMNS AND SAMPLE VALUES:
-{json.dumps(column_samples, indent=2)}
-
-CLASSIFY each column into ONE of these categories:
-1. GAIN_LOSS - For columns containing capital gains, profits, losses, or transaction amounts
-2. DATE - For columns with dates, including purchase dates, sale dates, transaction dates
-3. TYPE - For columns indicating transaction type (LTCG/STCG), holding period, or category
-4. AMOUNT - For columns with monetary values like cost basis, sale proceeds
-5. IDENTIFIER - For columns with names, codes, symbols, or identifiers
-6. IGNORE - For columns that aren't relevant to tax calculations
-
-CRITICAL RULES:
-1. Use EXACTLY the category names listed above
-2. Classify based on ACTUAL CONTENT, not column names
-3. When in doubt between AMOUNT and GAIN_LOSS:
-   - Use GAIN_LOSS for net gains/losses/profits
-   - Use AMOUNT for raw values like purchase price, sale price
-4. Dates MUST be in the sample values to classify as DATE
-5. Numbers alone don't make a column AMOUNT - look for currency indicators
-
-EXAMPLE RESPONSE:
-{{
-    "Purchase Date": "DATE",
-    "Sale Date": "DATE",
-    "Transaction Type": "TYPE",
-    "Net Gain/Loss": "GAIN_LOSS",
-    "Purchase Price": "AMOUNT",
-    "Sale Price": "AMOUNT",
-    "Symbol": "IDENTIFIER",
-    "Notes": "IGNORE"
-}}
-
-RESPOND with ONLY a JSON object mapping column names to their categories. Use double quotes for all strings. No comments or explanations.
-"""
-            
-            # Get response from Ollama
-            print(f"🤖 Classifying columns using Ollama...")
-            response = self.llm.complete(prompt)
-            response_text = response.text.strip()
-            
-            # Parse JSON response
-            classifications = self._parse_json_response(response_text)
-            if not classifications:
-                print("⚠️ Could not parse column classifications")
-                return {}
-            
-            # Group columns by category
-            categorized = {
-                'gain_cols': [],
-                'date_cols': [],
-                'type_cols': [],
-                'amount_cols': [],
-                'identifier_cols': [],
+        if "form 16" in filename_lower or "form16" in filename_lower:
+            schema = {
+                **base_schema,
+                "document_type": "form_16",
+                "employer_name": "string",
+                "gross_salary": "float",
+                "tax_deducted": "float",
+                "basic_salary": "float",
+                "hra_received": "float",
+                "special_allowance": "float",
+                "other_allowances": "float",
+                "perquisites": "float",
             }
             
-            for col, category in classifications.items():
-                if category == 'GAIN_LOSS':
-                    categorized['gain_cols'].append(col)
-                elif category == 'DATE':
-                    categorized['date_cols'].append(col)
-                elif category == 'TYPE':
-                    categorized['type_cols'].append(col)
-                elif category == 'AMOUNT':
-                    categorized['amount_cols'].append(col)
-                elif category == 'IDENTIFIER':
-                    categorized['identifier_cols'].append(col)
+            # Few-shot example for Form 16
+            example_text = """
+            PART A
+            TAN of Deductor: ABCDE12345F
+            Name and Address of Deductor: XYZ Corp, 123 Main St, Anytown
+            PAN of Deductee: BYHPR6078P
+            Name of Deductee: Rishabh Roy
+
+            PART B
+            DETAILS OF SALARY PAID AND ANY OTHER INCOME AND TAX DEDUCTED THEREON
+            1. Gross Salary: 1500000.00
+            2. Less: Allowances to the extent exempt u/s 10
+               (a) House Rent Allowance: 100000.00
+               (b) Special Allowance: 50000.00
+               (c) Other Allowances: 20000.00
+            3. Income chargeable under the head 'Salaries': 1330000.00
+            4. Tax deducted at source: 150000.00
+            """
+            example_json = {
+                "document_type": "form_16",
+                "confidence": 0.9,
+                "pan": "BYHPR6078P",
+                "employee_name": "Rishabh Roy",
+                "employer_name": "XYZ Corp",
+                "gross_salary": 1500000.00,
+                "tax_deducted": 150000.00,
+                "basic_salary": 1330000.00, # Assuming this is the basic salary after allowances
+                "hra_received": 100000.00,
+                "special_allowance": 50000.00,
+                "other_allowances": 20000.00,
+                "perquisites": 0.0
+            }
             
-            print("✅ Column classification results:")
+            prompt = self._create_structured_prompt_with_example(
+                "Form 16", schema, text_content, example_text, json.dumps(example_json, indent=2)
+            )
+
+        elif "payslip" in filename_lower:
+            schema = {
+                **base_schema,
+                "document_type": "form_16", # Treat payslips as form_16 for data aggregation
+                "employer_name": "string",
+                "gross_salary": "float",
+                "tax_deducted": "float",
+                "basic_salary": "float",
+                "hra_received": "float",
+                "special_allowance": "float",
+                "other_allowances": "float",
+                "perquisites": "float",
+            }
+            prompt = self._create_structured_prompt("Payslip", schema, text_content)
+
+        elif "bank" in filename_lower and "interest" in filename_lower:
+            schema = {
+                **base_schema,
+                "document_type": "bank_interest_certificate",
+                "bank_name": "string",
+                "account_number": "string",
+                "interest_amount": "float",
+                "tds_amount": "float",
+                "financial_year": "string",
+            }
+            prompt = self._create_structured_prompt("Bank Interest Certificate", schema, text_content)
+
+        elif "capital" in filename_lower and "gains" in filename_lower:
+            schema = {
+                **base_schema,
+                "document_type": "capital_gains",
+                "total_capital_gains": "float",
+                "long_term_capital_gains": "float",
+                "short_term_capital_gains": "float",
+                "number_of_transactions": "integer",
+            }
+            prompt = self._create_structured_prompt("Capital Gains Statement", schema, text_content)
+
+        return prompt, schema
+
+    def _create_structured_prompt(self, doc_type: str, schema, text_content: str):
+        """Creates a standardized prompt for structured JSON extraction."""
+        json_schema_str = json.dumps(schema, indent=2)
+        
+        specific_instructions = ""
+        if doc_type == "Form 16":
+            specific_instructions = f"""
+        For Form 16 documents, pay close attention to:
+        - **PART A:** Look for TAN of Deductor, Name and Address of Deductor, PAN of Deductee, Name of Deductee.
+        - **PART B:** Look for 'Details of Salary Paid' section. Extract Gross Salary, Perquisites, HRA, Special Allowance, Other Allowances.
+        - Ensure to extract the correct 'Tax Deducted' amount.
+        - If 'Perquisites' are not explicitly mentioned, assume 0.0.
+        - Prioritize values from 'Income chargeable under the head 'Salaries'' for basic_salary if available.
+        """
+
+        return f"""
+        You are an expert document analyzer for Indian financial documents.
+        Your task is to extract information from the following {doc_type} document.
+        Please analyze the text and respond with ONLY a valid JSON object that strictly adheres to the following schema.
+        Do not include any explanations or apologies.
+
+        TEXT TO ANALYZE:
+        """
+        {text_content[:15000]}  # Truncate for performance
+        """
+
+        JSON SCHEMA:
+        ```json
+        {json_schema_str}
+        ```
+
+        CRITICAL RULES:
+        1.  Provide only the JSON object as the output.
+        2.  All string values must be enclosed in double quotes.
+        3.  All numerical values should be numbers (int or float), not strings. Use 0.0 or 0 if a value is not found.
+        4.  If a string value (like a name or PAN) is not found, use an empty string "".
+        5.  STRICTLY adhere to the provided JSON SCHEMA, including exact field names and data types.
+        6.  Map extracted data to the following exact field names: `gross_salary`, `tax_deducted`, `employee_name`, `pan`, `employer_name`, `interest_amount`, `tds_amount`, `total_capital_gains`, `long_term_capital_gains`, `short_term_capital_gains`, `number_of_transactions`, `epf_amount`, `ppf_amount`, `life_insurance`, `elss_amount`, `health_insurance`.
+        {specific_instructions}
+        """
+
+    def _create_structured_prompt_with_example(self, doc_type: str, schema, text_content: str, example_text: str, example_json: str):
+        """Creates a standardized prompt for structured JSON extraction with a few-shot example."""
+        json_schema_str = json.dumps(schema, indent=2)
+        
+        specific_instructions = ""
+        if doc_type == "Form 16":
+            specific_instructions = f"""
+        For Form 16 documents, pay close attention to:
+        - **PART A:** Look for TAN of Deductor, Name and Address of Deductor, PAN of Deductee, Name of Deductee.
+        - **PART B:** Look for 'Details of Salary Paid' section. Extract Gross Salary, Perquisites, HRA, Special Allowance, Other Allowances.
+        - Ensure to extract the correct 'Tax Deducted' amount.
+        - If 'Perquisites' are not explicitly mentioned, assume 0.0.
+        - Prioritize values from 'Income chargeable under the head 'Salaries'' for basic_salary if available.
+        """
+
+        return f"""
+        You are an expert document analyzer for Indian financial documents.
+        Your task is to extract information from the following {doc_type} document.
+        Please analyze the text and respond with ONLY a valid JSON object that strictly adheres to the following schema.
+        Do not include any explanations or apologies.
+
+        HERE IS AN EXAMPLE:
+        TEXT:
+        """
+        {example_text}
+        """
+        JSON:
+        ```json
+        {example_json}
+        ```
+
+        TEXT TO ANALYZE:
+        """
+        {text_content[:15000]}  # Truncate for performance
+        """
+
+        JSON SCHEMA:
+        ```json
+        {json_schema_str}
+        ```
+
+        CRITICAL RULES:
+        1.  Provide only the JSON object as the output.
+        2.  All string values must be enclosed in double quotes.
+        3.  All numerical values should be numbers (int or float), not strings. Use 0.0 or 0 if a value is not found.
+        4.  If a string value (like a name or PAN) is not found, use an empty string "".
+        5.  STRICTLY adhere to the provided JSON SCHEMA, including exact field names and data types.
+        6.  Map extracted data to the following exact field names: `gross_salary`, `tax_deducted`, `employee_name`, `pan`, `employer_name`, `interest_amount`, `tds_amount`, `total_capital_gains`, `long_term_capital_gains`, `short_term_capital_gains`, `number_of_transactions`, `epf_amount`, `ppf_amount`, `life_insurance`, `elss_amount`, `health_insurance`.
+        {specific_instructions}
+        """
+
+    def _parse_json_response(self, response_text: str):
+        """Parses the JSON response from the LLM."""
+        try:
+            # Llama3 with format='json' should return a valid JSON string.
+            return json.loads(response_text)
+        except json.JSONDecodeError:
+            self.logger.error(f"Failed to decode JSON from LLM response: {response_text}")
+            # Fallback for cases where the model might still add markdown backticks
+            match = re.search(r"```json\n(.*?)\n```", response_text, re.DOTALL)
+            if match:
+                try:
+                    return json.loads(match.group(1))
+                except json.JSONDecodeError:
+                    self.logger.error("Failed to decode JSON even after stripping markdown.")
+                    return None
+            return None
             for category, cols in categorized.items():
                 if cols:
                     print(f"   {category}: {cols}")
@@ -2008,122 +2042,7 @@ RESPOND with ONLY a JSON object mapping column names to their categories. Use do
             print(f"⚠️ Error classifying columns: {str(e)}")
             return {}
     
-    def _validate_capital_gains_data(self, section_df: pd.DataFrame, classified_cols: Dict[str, List[str]]) -> Tuple[bool, List[str], Dict[str, Any]]:
-        """Validate capital gains data and return validation status, errors, and validated data"""
-        validation_errors = []
-        validated_data = {
-            'ltcg_total': 0.0,
-            'stcg_total': 0.0,
-            'total_gains': 0.0,
-            'num_transactions': 0,
-            'valid_transactions': []
-        }
-        
-        # Required columns
-        gain_cols = classified_cols.get('gain_cols', [])
-        date_cols = classified_cols.get('date_cols', [])
-        type_cols = classified_cols.get('type_cols', [])
-        amount_cols = classified_cols.get('amount_cols', [])
-        
-        # Basic column validation
-        if not gain_cols and not amount_cols:
-            validation_errors.append("No gain/amount columns found")
-            return False, validation_errors, validated_data
-        
-        if not date_cols:
-            validation_errors.append("No date columns found")
-            return False, validation_errors, validated_data
-        
-        try:
-            # Process each transaction
-            for idx, row in section_df.iterrows():
-                transaction = {'valid': True, 'errors': []}
-                
-                # Validate dates if we have purchase and sale dates
-                if len(date_cols) >= 2:
-                    try:
-                        purchase_date = pd.to_datetime(row[date_cols[0]])
-                        sale_date = pd.to_datetime(row[date_cols[1]])
-                        
-                        # Check date order
-                        if purchase_date > sale_date:
-                            transaction['errors'].append(f"Purchase date {purchase_date} is after sale date {sale_date}")
-                            transaction['valid'] = False
-                        
-                        # Calculate holding period
-                        holding_period = (sale_date - purchase_date).days
-                        transaction['holding_period'] = holding_period
-                        
-                        # Classify as LTCG/STCG based on holding period
-                        transaction['type'] = 'LTCG' if holding_period > 365 else 'STCG'
-                    except Exception as e:
-                        transaction['errors'].append(f"Date validation error: {str(e)}")
-                        transaction['valid'] = False
-                
-                # Validate gain/loss amount
-                if gain_cols:
-                    try:
-                        gain_amount = float(row[gain_cols[0]])
-                        transaction['gain_amount'] = gain_amount
-                        
-                        # Validate against purchase and sale amounts if available
-                        if len(amount_cols) >= 2:
-                            purchase_amount = float(row[amount_cols[0]])
-                            sale_amount = float(row[amount_cols[1]])
-                            calculated_gain = sale_amount - purchase_amount
-                            
-                            # Check if reported gain matches calculated gain
-                            if abs(calculated_gain - gain_amount) > 1:  # Allow 1 rupee difference for rounding
-                                transaction['errors'].append(
-                                    f"Reported gain (₹{gain_amount:,.2f}) doesn't match "
-                                    f"calculated gain (₹{calculated_gain:,.2f})"
-                                )
-                                transaction['valid'] = False
-                    except Exception as e:
-                        transaction['errors'].append(f"Amount validation error: {str(e)}")
-                        transaction['valid'] = False
-                
-                # Use explicit type if available, otherwise use holding period classification
-                if type_cols:
-                    try:
-                        explicit_type = str(row[type_cols[0]]).lower()
-                        if 'long' in explicit_type or 'ltcg' in explicit_type:
-                            transaction['type'] = 'LTCG'
-                        elif 'short' in explicit_type or 'stcg' in explicit_type:
-                            transaction['type'] = 'STCG'
-                    except Exception as e:
-                        transaction['errors'].append(f"Type validation error: {str(e)}")
-                        # Fall back to holding period classification if available
-                
-                # Add valid transaction to totals
-                if transaction['valid']:
-                    validated_data['num_transactions'] += 1
-                    if transaction.get('gain_amount'):
-                        if transaction.get('type') == 'LTCG':
-                            validated_data['ltcg_total'] += transaction['gain_amount']
-                        else:  # STCG
-                            validated_data['stcg_total'] += transaction['gain_amount']
-                else:
-                    validation_errors.extend(transaction['errors'])
-                
-                validated_data['valid_transactions'].append(transaction)
-            
-            # Calculate total gains
-            validated_data['total_gains'] = validated_data['ltcg_total'] + validated_data['stcg_total']
-            
-            # Final validation checks
-            if validated_data['num_transactions'] == 0:
-                validation_errors.append("No valid transactions found")
-                return False, validation_errors, validated_data
-            
-            if validated_data['total_gains'] == 0 and validated_data['num_transactions'] > 0:
-                validation_errors.append("Warning: Total gains is zero despite having transactions")
-            
-            return len(validation_errors) == 0, validation_errors, validated_data
-            
-        except Exception as e:
-            validation_errors.append(f"Validation error: {str(e)}")
-            return False, validation_errors, validated_data
+    
     
     def _create_general_prompt(self, filename: str, text_content: str) -> str:
         """Create general document analysis prompt"""
@@ -2175,7 +2094,7 @@ CRITICAL RULES:
 Respond with ONLY the JSON object, no other text or explanations.
 """
     
-    def _parse_json_response(self, response_text: str) -> Optional[Dict[str, Any]]:
+    def _parse_json_response(self, response_text: str):
         """Parse JSON response from Ollama with improved error handling"""
         
         # Clean the response text
@@ -2231,7 +2150,7 @@ Respond with ONLY the JSON object, no other text or explanations.
             print(f"❌ Unexpected error parsing JSON: {e}")
             return None
 
-    def _clean_extracted_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def _clean_extracted_data(self, data):
         """Clean up extracted data by converting placeholders to appropriate values"""
         cleaned = {}
         
@@ -2255,7 +2174,7 @@ Respond with ONLY the JSON object, no other text or explanations.
         
         return cleaned
 
-    def _extract_key_value_pairs(self, text: str) -> Optional[Dict[str, Any]]:
+    def _extract_key_value_pairs(self, text: str):
         """Extract key-value pairs from text when JSON parsing fails"""
         try:
             result = {}
@@ -2326,7 +2245,7 @@ Respond with ONLY the JSON object, no other text or explanations.
         except Exception:
             return None
     
-    def analyze_multiple_documents(self, file_paths: List[str]) -> List[OllamaExtractedData]:
+    def analyze_multiple_documents(self, file_paths):
         """Analyze multiple documents and return consolidated results"""
         
         results = []
@@ -2343,7 +2262,7 @@ Respond with ONLY the JSON object, no other text or explanations.
         
         return results
     
-    def get_summary(self, results: List[OllamaExtractedData]) -> Dict[str, Any]:
+    def get_summary(self, results):
         """Generate summary of all extracted data"""
         
         summary = {

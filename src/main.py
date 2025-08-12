@@ -11,16 +11,17 @@ import os
 import logging
 import sys
 import json
+import traceback
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
 # Add src to path for imports
-sys.path.append(str(Path(__file__).parent))
+sys.path.append(str(Path(__file__).parent.parent))
 
-from core.ollama_document_analyzer import OllamaDocumentAnalyzer, OllamaExtractedData
-from core.tax_calculator import TaxCalculator
-from core.document_processor import DocumentProcessor
+from src.core.document_processing.ollama_analyzer import OllamaDocumentAnalyzer, OllamaExtractedData
+from src.core.tax_calculator import TaxCalculator
+from src.core.document_processor import DocumentProcessor
 
 class IncomeTaxAssistant:
     """Main Income Tax AI Assistant Application"""
@@ -61,8 +62,70 @@ class IncomeTaxAssistant:
             ],
         )
     
+    import concurrent.futures
+from multiprocessing import Pool, cpu_count
+
+# Top-level function for multiprocessing
+def _analyze_document_wrapper(file_path: str, model_name: str) -> Optional[OllamaExtractedData]:
+    """Wrapper function to analyze a single document for multiprocessing.
+    OllamaDocumentAnalyzer needs to be initialized within each process.
+    """
+    file_name = Path(file_path).name
+    print(f"🔍 Worker analyzing: {file_name}")
+    try:
+        analyzer = OllamaDocumentAnalyzer(model=model_name)
+        result = analyzer.analyze_document(file_path)
+        if result:
+            print(f"✅ Worker finished {file_name}: Type={result.document_type}, Confidence={result.confidence:.2f}")
+        else:
+            print(f"⚠️ Worker finished {file_name}: No result returned.")
+        return result
+    except Exception as e:
+        print(f"❌ Worker error analyzing {file_name}: {e}")
+        print(traceback.format_exc())
+        return None
+
+class IncomeTaxAssistant:
+    """Main Income Tax AI Assistant Application"""
+    
+    def __init__(self, financial_year: str = "2024-25"):
+        """Initialize the tax assistant"""
+        self._ensure_logging()
+        self.document_analyzer = None # Will be initialized in worker processes
+        self.document_processor = DocumentProcessor()
+        self.financial_year = financial_year
+        self.tax_calculator = TaxCalculator(financial_year)
+        
+        # Analysis results storage
+        self.analyzed_documents: List[OllamaExtractedData] = []
+        self.tax_summary: Dict[str, Any] = {}
+        
+        print("🚀 Income Tax AI Assistant Initialized")
+        print("=" * 50)
+
+    def _ensure_logging(self) -> None:
+        """Configure application logging to write to rotating log files."""
+        logs_dir = Path(__file__).resolve().parent.parent / "logs"
+        logs_dir.mkdir(exist_ok=True)
+        log_file = logs_dir / "app.log"
+
+        # Avoid duplicate handlers if reinitialized in a Streamlit session
+        root_logger = logging.getLogger()
+        if any(isinstance(h, logging.FileHandler) and getattr(h, 'baseFilename', None) == str(log_file) for h in root_logger.handlers):
+            return
+
+        log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+        logging.basicConfig(
+            level=getattr(logging, log_level, logging.INFO),
+            format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+            handlers=[
+                logging.FileHandler(log_file, encoding="utf-8"),
+                logging.StreamHandler()
+            ],
+        )
+    
     def analyze_documents_folder(self, folder_path: str) -> List[OllamaExtractedData]:
-        """Analyze all documents in a folder"""
+        """Analyze all documents in a folder using parallel processing."""
         folder = Path(folder_path)
         
         if not folder.exists():
@@ -84,21 +147,30 @@ class IncomeTaxAssistant:
         print("-" * 50)
         
         analyzed_docs = []
-        
-        for doc_file in document_files:
-            print(f"🔍 Analyzing: {doc_file.name}")
-            
-            try:
-                # Analyze document
-                result = self.document_analyzer.analyze_document(str(doc_file))
+        start_time = datetime.now()
+
+        # Use multiprocessing.Pool for true parallelism
+        # Max processes can be adjusted based on system resources
+        num_processes = cpu_count() - 1 # Use all available CPU cores - 1
+        print(f"🚀 Starting parallel analysis with {num_processes} processes...")
+
+        # Prepare arguments for the wrapper function
+        # Assuming default model 'llama3:8b' for now, can be made configurable
+        tasks = [(str(doc_file), "llama3:8b") for doc_file in document_files]
+
+        with Pool(processes=num_processes) as pool:
+            # pool.starmap is used because _analyze_document_wrapper takes multiple arguments
+            results = pool.starmap(_analyze_document_wrapper, tasks)
+
+        for result in results:
+            if result:
                 analyzed_docs.append(result)
-                
-                # Print summary
+                print(f"✅ Finished analyzing: {result.raw_text[:50]}...") # Print partial filename or identifier
                 self._print_document_summary(result)
-                
-            except Exception as e:
-                print(f"❌ Error analyzing {doc_file.name}: {e}")
-                continue
+            
+        end_time = datetime.now()
+        time_taken = end_time - start_time
+        print(f"✅ Parallel analysis completed in {time_taken}")
         
         self.analyzed_documents = analyzed_docs
         return analyzed_docs
@@ -129,10 +201,9 @@ class IncomeTaxAssistant:
             print(f"   📊 LTCG: ₹{doc.long_term_capital_gains:,.2f}")
             print(f"   📊 STCG: ₹{doc.short_term_capital_gains:,.2f}")
         
-        elif doc.document_type == "investment":
-            print(f"   💼 EPF: ₹{doc.epf_amount:,.2f}")
-            print(f"   💼 PPF: ₹{doc.ppf_amount:,.2f}")
-            print(f"   💼 ELSS: ₹{doc.elss_amount:,.2f}")
+        elif doc.document_type == "nps_statement":
+            print(f"   💰 NPS Tier 1: ₹{getattr(doc, 'nps_tier1_contribution', 0.0):,.2f}")
+            print(f"   💰 NPS 80CCD(1B): ₹{getattr(doc, 'nps_80ccd1b', 0.0):,.2f}")
         
         print()
     
@@ -146,7 +217,12 @@ class IncomeTaxAssistant:
         def fy_key(doc) -> str:
             fy = getattr(doc, 'financial_year', None)
             if isinstance(fy, str) and fy.strip():
-                return fy.strip()
+                # Normalize FY to YYYY-YY format
+                fy = fy.strip().replace(" ", "").replace("FY", "")
+                if len(fy) == 7 and fy[4] == "-": # 2024-25
+                    return fy
+                if len(fy) == 9 and fy[4] == "-": # 2024-2025
+                    return f"{fy[:5]}{fy[7:]}"
             return self.financial_year
         
         # Aggregate data from all documents by FY (robust to doc_type variants)
@@ -164,11 +240,12 @@ class IncomeTaxAssistant:
 
             doc_type_raw = getattr(doc, 'document_type', '') or ''
             doc_type = doc_type_raw.lower().strip()
+            doc_type_normalized = doc_type.replace(" ", "_")
 
-            is_form16 = any(k in doc_type for k in ["form_16", "form 16", "form16"]) or doc_type == "form_16"
-            is_bank_interest = ("bank" in doc_type and "interest" in doc_type) or doc_type in ["bank_interest_certificate", "interest_certificate"]
-            is_capital_gains = ("capital" in doc_type and "gain" in doc_type) or doc_type == "capital_gains"
-            is_investment = "invest" in doc_type or doc_type == "investment"
+            is_form16 = any(k in doc_type_normalized for k in ["form_16", "form16"])
+            is_bank_interest = any(k in doc_type_normalized for k in ["bank_interest_certificate", "interest_certificate"])
+            is_capital_gains = any(k in doc_type_normalized for k in ["capital_gains", "capital_gains_report"])
+            is_investment = any(k in doc_type_normalized for k in ["investment", "elss_statement", "nps_transaction_statement"])
 
             if is_form16:
                 # Use gross_salary, falling back to total_gross_salary if needed
@@ -208,10 +285,23 @@ class IncomeTaxAssistant:
             "analysis_date": datetime.now().isoformat()
         }
         
+        # Debugging print statements
+        print(f"DEBUG: Aggregated data by FY: {by_fy}")
+
+        # Build per-FY summaries
+        result: Dict[str, Any] = {
+            "by_financial_year": {},
+            "documents_analyzed": len(self.analyzed_documents),
+            "analysis_date": datetime.now().isoformat()
+        }
+        
         for fy, agg in by_fy.items():
             total_income = float(agg.get("salary_income", 0.0)) + float(agg.get("interest_income", 0.0)) + float(agg.get("capital_gains", 0.0))
+            print(f"DEBUG: FY {fy} - Total Income: {total_income}, Salary: {agg.get('salary_income', 0.0)}, Interest: {agg.get('interest_income', 0.0)}, Capital Gains: {agg.get('capital_gains', 0.0)}")
+            
             calc = TaxCalculator(fy)
             new_tax = calc.calculate_new_regime_tax(total_income) if total_income > 0 else 0.0
+            
             # Apply 80C/80CCD(1)/80CCD(1B) caps for old regime
             base_80c_like = agg.get("total_deductions", 0.0)
             nps_tier1 = agg.get('nps_tier1', 0.0)
@@ -221,7 +311,14 @@ class IncomeTaxAssistant:
             # Additional 80CCD(1B) cap 50k
             capped_1b = min(nps_1b, 50000.0)
             total_deductions_old = capped_80c + capped_1b
+            
+            print(f"DEBUG: FY {fy} - Total Deductions (pre-cap): {base_80c_like}, NPS Tier1: {nps_tier1}, NPS 1B: {nps_1b}")
+            print(f"DEBUG: FY {fy} - Capped 80C: {capped_80c}, Capped 1B: {capped_1b}, Total Deductions (old regime): {total_deductions_old}")
+
             old_tax = calc.calculate_old_regime_tax(total_income, total_deductions_old) if total_income > 0 else 0.0
+            
+            print(f"DEBUG: FY {fy} - New Regime Tax: {new_tax}, Old Regime Tax: {old_tax}")
+
             recommended = "new" if new_tax < old_tax else "old"
             result["by_financial_year"][fy] = {
                 **agg,
@@ -398,7 +495,7 @@ class IncomeTaxAssistant:
         
         print()
     
-    def generate_report(self, output_file: str = "tax_analysis_report.json"):
+    def generate_report(self, output_file: Optional[str] = None):
         """Generate a comprehensive tax analysis report"""
         if not self.tax_summary:
             print("❌ No tax summary available. Run calculate_tax_summary() first.")
@@ -413,7 +510,7 @@ class IncomeTaxAssistant:
             "tax_summary": self.tax_summary,
             "document_details": [
                 {
-                    "filename": doc.raw_text[:100] + "..." if doc.raw_text else "Unknown",
+                    "filename": Path(doc.file_path).name if doc.file_path else "Unknown",
                     "document_type": doc.document_type,
                     "confidence": doc.confidence,
                     "extraction_method": doc.extraction_method,
@@ -423,11 +520,15 @@ class IncomeTaxAssistant:
             ]
         }
         
-        # Save report
-        with open(output_file, 'w') as f:
-            json.dump(report, f, indent=2, default=str)
-        
-        print(f"📄 Report saved to: {output_file}")
+        # Save report if output_file is provided
+        if output_file:
+            with open(output_file, 'w') as f:
+                json.dump(report, f, indent=2, default=str)
+            
+            print(f"📄 Report saved to: {output_file}")
+        else:
+            print("📄 Report generated but not saved to file (no output_file specified).")
+            return report # Return the report data if not saving to file
     
     def _extract_key_data(self, doc: OllamaExtractedData) -> Dict[str, Any]:
         """Extract key data from a document for the report"""
@@ -494,10 +595,8 @@ class IncomeTaxAssistant:
             
             elif choice == "3":
                 if self.tax_summary:
-                    output_file = input("Enter output filename (default: tax_analysis_report.json): ").strip()
-                    if not output_file:
-                        output_file = "tax_analysis_report.json"
-                    self.generate_report(output_file)
+                    print("Generating report (will not be saved to file by default).")
+                    self.generate_report()
                 else:
                     print("❌ No tax summary available. Please calculate tax summary first.")
             

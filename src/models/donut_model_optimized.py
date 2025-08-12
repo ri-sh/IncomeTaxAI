@@ -8,8 +8,6 @@ import os
 import time
 import json
 import re
-from pathlib import Path
-from typing import Dict, Any, Optional, List
 import torch
 from PIL import Image
 import fitz  # PyMuPDF for PDF to image conversion
@@ -25,7 +23,7 @@ class OptimizedDonutModel:
     Optimized Donut model with PDF support
     """
     
-    def __init__(self, model_path: str = "naver-clova-ix/donut-base"):
+    def __init__(self, model_path = "naver-clova-ix/donut-base"):
         self.model_path = model_path
         self.processor = None
         self.model = None
@@ -163,7 +161,7 @@ class OptimizedDonutModel:
             print(f"❌ Error loading Donut model: {e}")
             return False
     
-    def pdf_to_images(self, pdf_path: str, output_dir: str = "temp_images") -> List[str]:
+    def pdf_to_images(self, pdf_path, output_dir = "temp_images") -> List[str]:
         """Convert PDF to images"""
         try:
             # Create output directory
@@ -201,7 +199,7 @@ class OptimizedDonutModel:
             print(f"❌ Error converting PDF to images: {e}")
             return []
     
-    def analyze_image(self, image_path: str, task_prompt: str = None) -> str:
+    def analyze_image(self, image_path, task_prompt = None) -> str:
         """Analyze single image with Donut"""
         if not self.is_loaded:
             print("❌ Donut model not loaded")

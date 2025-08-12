@@ -15,7 +15,7 @@ import re
 from dataclasses import dataclass
 import pickle
 
-from src.core.ollama_document_analyzer import OllamaDocumentAnalyzer, OllamaExtractedData
+from src.core.document_processing.ollama_analyzer import OllamaDocumentAnalyzer, OllamaExtractedData
 
 @dataclass
 class OptimizedExtractedData:

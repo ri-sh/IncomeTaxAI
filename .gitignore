@@ -1,3 +1,11 @@
 tax_ai_env/
 logs/
 cache/
+Income Tax 2024-2025
+tests
+.pytest_cache
+src/__py_cache_
+**/__py_cache__/
+models/__pycache__/
+**.pdf
+
