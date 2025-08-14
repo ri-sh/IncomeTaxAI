@@ -1,27 +1,13 @@
 import json
+import langextract as lx
 
 # Define schemas for each document type
 SCHEMAS = {
     "form_16": {
         "type": "object",
         "properties": {
-            "employee_name": {"type": "string"},
-            "pan": {"type": "string"},
-            "employer_name": {"type": "string"},
             "gross_salary": {"type": "number"},
-            "basic_salary": {"type": "number"},
-            "perquisites": {"type": "number"},
-            "total_gross_salary": {"type": "number"},
-            "hra_received": {"type": "number"},
-            "special_allowance": {"type": "number"},
-            "other_allowances": {"type": "number"},
             "tax_deducted": {"type": "number"},
-            "epf_amount": {"type": "number"},
-            "ppf_amount": {"type": "number"},
-            "life_insurance": {"type": "number"},
-            "elss_amount": {"type": "number"},
-            "health_insurance": {"type": "number"},
-            "financial_year": {"type": "string"},
         },
         "required": ["gross_salary", "tax_deducted"],
     },
@@ -157,7 +143,7 @@ Total 100000.00 5000.00 100.00 510.00""",
         elif doc_type == "nps_statement":
             return _create_structured_prompt_with_example(doc_type, schema, text_content,
                 example_text="""NPS Transaction Statement\nFor the Financial Year 2024-25\n\nContribution Details\nBy Voluntary Contributions 50000.00\nTotal Contribution 250000.00""",
-                example_json="""{\n  \"nps_tier1_contribution\": 250000.00,\n  \"nps_80ccd1b\": 50000.00,\n  \"nps_employer_contribution\": 0.00,\n  \"financial_year\": \"2024-25\"\n}"""), schema
+                example_json="""{\n  \"nps_tier1_contribution\": 250000.00,\n  \"nps_80ccd1b\": 50000.00,\n  \"nps_employer_contribution\": 0.00,\n  \"financial_year\": \"2024-25\"\n}""" ), schema
         else:
             return _create_structured_prompt(doc_type, schema, text_content), schema
 
@@ -312,4 +298,29 @@ def _create_structured_prompt_with_example(doc_type: str, schema, text_content: 
     6.  Map extracted data to the following exact field names: `gross_salary`, `tax_deducted`, `employee_name`, `pan`, `employer_name`, `interest_amount`, `tds_amount`, `total_capital_gains`, `long_term_capital_gains`, `short_term_capital_gains`, `number_of_transactions`, `epf_amount`, `ppf_amount`, `life_insurance`, `elss_amount`, `health_insurance`.
     7.  Do not include any fields that are not in the JSON SCHEMA.
     {specific_instructions}
-    """ 
+    """
+
+def _get_langextract_prompt_and_examples(doc_type: str):
+    """Determines the prompt and examples for langextract based on the document type."""
+    if doc_type == "form_16":
+        prompt_description = "Extract the gross salary and tax deducted from the document."
+        examples = [
+            lx.data.ExampleData(
+                text="Gross Salary: 1,200,000.00, Tax Deducted: 120,000.00",
+                extractions=[
+                    lx.data.Extraction(extraction_class="gross_salary", extraction_text="1,200,000.00"),
+                    lx.data.Extraction(extraction_class="tax_deducted", extraction_text="120,000.00"),
+                ],
+            )
+        ]
+        return prompt_description, examples
+    # Default case if doc_type is not form_16
+    return "Extract all key-value pairs.", [
+        lx.data.ExampleData(
+            text="Name: John Doe, Age: 30",
+            extractions=[
+                lx.data.Extraction(extraction_class="name", extraction_text="John Doe"),
+                lx.data.Extraction(extraction_class="age", extraction_text="30"),
+            ],
+        )
+    ] 

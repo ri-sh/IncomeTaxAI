@@ -6,11 +6,12 @@ Test Ollama's ability to analyze tax documents and extract detailed information
 import sys
 import os
 from pathlib import Path
+import traceback
 
 # Add src to path
 sys.path.append(str(Path(__file__).parent / "src"))
 
-from src.core.ollama_document_analyzer import OllamaDocumentAnalyzer
+from src.core.document_processing.ollama_analyzer import OllamaDocumentAnalyzer
 from src.data.document_processor import DocumentProcessor
 
 def test_ollama_document_analysis():
@@ -21,7 +22,7 @@ def test_ollama_document_analysis():
     
     # Initialize the analyzer
     try:
-        analyzer = OllamaDocumentAnalyzer()
+        analyzer = OllamaDocumentAnalyzer(model="llama3:8b")
         if not analyzer.llm:
             print("❌ Ollama LLM not available")
             return False
@@ -31,7 +32,7 @@ def test_ollama_document_analysis():
         return False
     
     # Test documents from Income Tax 2024-2025 folder
-    documents_path = Path("/Users/rishabh.roy/Desktop/Income Tax 2024-2025")
+    documents_path = Path("~/Downloads/Income Tax 2024-2025").expanduser()
     
     if not documents_path.exists():
         print(f"❌ Documents folder not found: {documents_path}")
@@ -123,11 +124,13 @@ def test_ollama_document_analysis():
                 
         except Exception as e:
             print(f"❌ Error analyzing {doc_path.name}: {e}")
+            print(traceback.format_exc())
             results.append({
                 "document": doc_path.name,
                 "ollama_success": False,
                 "ollama_error": str(e)
             })
+
         
         print()
     
@@ -174,7 +177,7 @@ def test_comparison_with_regex():
     regex_processor = DocumentProcessor()
     
     # Test with Form16.pdf
-    form16_path = "/Users/rishabh.roy/Desktop/Income Tax 2024-2025/Form16.pdf"
+    form16_path = os.path.expanduser("~/Downloads/Income Tax 2024-2025/Form16.pdf")
     
     if not os.path.exists(form16_path):
         print("❌ Form16.pdf not found")

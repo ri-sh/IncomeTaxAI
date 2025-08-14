@@ -11,7 +11,7 @@ def test_ollama_model(doc_path):
     """Test current Ollama LLM model"""
     print("🔍 Testing Ollama LLM...")
     try:
-        from src.core.ollama_document_analyzer import OllamaDocumentAnalyzer
+        from src.core.document_processing.ollama_analyzer import OllamaDocumentAnalyzer
         
         analyzer = OllamaDocumentAnalyzer()
         result = analyzer.analyze_document(doc_path)

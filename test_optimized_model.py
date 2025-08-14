@@ -11,7 +11,7 @@ def test_original_model():
     """Test original Ollama model"""
     print("🔍 Testing Original Ollama Model...")
     try:
-        from src.core.ollama_document_analyzer import OllamaDocumentAnalyzer
+        from src.core.document_processing.ollama_analyzer import OllamaDocumentAnalyzer
         
         start_time = time.time()
         analyzer = OllamaDocumentAnalyzer()

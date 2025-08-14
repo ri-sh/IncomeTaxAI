@@ -22,7 +22,7 @@ class ModelOptimizer:
         """Test and optimize current Ollama LLM model"""
         print("🔍 Testing Ollama LLM...")
         try:
-            from src.core.ollama_document_analyzer import OllamaDocumentAnalyzer
+            from src.core.document_processing.ollama_analyzer import OllamaDocumentAnalyzer
             
             # Test current performance
             start_time = time.time()

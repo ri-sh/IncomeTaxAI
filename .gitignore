@@ -1,11 +1,84 @@
+# Virtual environments
 tax_ai_env/
+tax_ai_env_py310/
+venv/
+env/
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Logs and cache
 logs/
 cache/
-Income Tax 2024-2025
-tests
+temp_images/
 .pytest_cache
-src/__py_cache_
-**/__py_cache__/
-models/__pycache__/
-**.pdf
+*.log
+
+# Tax documents and sensitive files
+Income Tax 2024-25/
+"Income Tax 2024-25"/
+*.pdf
+*.xlsx
+*.xls
+*.csv
+tax_analysis_report.txt
+credentials.json
+google_token.json
+
+# Test files and debugging
+test_*.py
+debug_*.py
+*_test.py
+tests/
+model_test_results_*.json
+model_optimization_results.json
+quickstart.py
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Models and large files
+models/
+*.bin
+*.safetensors
+*.pt
+*.pth
+
+# Temporary files
+*.tmp
+*.temp
+.temporary/
 

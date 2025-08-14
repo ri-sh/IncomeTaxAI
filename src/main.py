@@ -11,69 +11,33 @@ import os
 import logging
 import sys
 import json
+import argparse
 import traceback
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+from multiprocessing import Pool, cpu_count
+import concurrent.futures
 
 # Add src to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
 
 from src.core.document_processing.ollama_analyzer import OllamaDocumentAnalyzer, OllamaExtractedData
+from src.core.document_processing.langextract_analyzer import LangextractDocumentAnalyzer
 from src.core.tax_calculator import TaxCalculator
 from src.core.document_processor import DocumentProcessor
 
-class IncomeTaxAssistant:
-    """Main Income Tax AI Assistant Application"""
-    
-    def __init__(self, financial_year: str = "2024-25"):
-        """Initialize the tax assistant"""
-        self._ensure_logging()
-        self.document_analyzer = OllamaDocumentAnalyzer()
-        self.document_processor = DocumentProcessor()
-        self.financial_year = financial_year
-        self.tax_calculator = TaxCalculator(financial_year)
-        
-        # Analysis results storage
-        self.analyzed_documents: List[OllamaExtractedData] = []
-        self.tax_summary: Dict[str, Any] = {}
-        
-        print("🚀 Income Tax AI Assistant Initialized")
-        print("=" * 50)
-
-    def _ensure_logging(self) -> None:
-        """Configure application logging to write to rotating log files."""
-        logs_dir = Path(__file__).resolve().parent.parent / "logs"
-        logs_dir.mkdir(exist_ok=True)
-        log_file = logs_dir / "app.log"
-
-        # Avoid duplicate handlers if reinitialized in a Streamlit session
-        root_logger = logging.getLogger()
-        if any(isinstance(h, logging.FileHandler) and getattr(h, 'baseFilename', None) == str(log_file) for h in root_logger.handlers):
-            return
-
-        log_level = os.getenv("LOG_LEVEL", "INFO").upper()
-        logging.basicConfig(
-            level=getattr(logging, log_level, logging.INFO),
-            format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-            handlers=[
-                logging.FileHandler(log_file, encoding="utf-8"),
-                logging.StreamHandler()
-            ],
-        )
-    
-    import concurrent.futures
-from multiprocessing import Pool, cpu_count
-
 # Top-level function for multiprocessing
-def _analyze_document_wrapper(file_path: str, model_name: str) -> Optional[OllamaExtractedData]:
-    """Wrapper function to analyze a single document for multiprocessing.
-    OllamaDocumentAnalyzer needs to be initialized within each process.
-    """
+def _analyze_document_wrapper(args) -> Optional[OllamaExtractedData]:
+    """Wrapper function to analyze a single document for multiprocessing."""
+    file_path, analyzer_class_name, model_name = args
     file_name = Path(file_path).name
     print(f"🔍 Worker analyzing: {file_name}")
     try:
-        analyzer = OllamaDocumentAnalyzer(model=model_name)
+        if analyzer_class_name == 'OllamaDocumentAnalyzer':
+            analyzer = OllamaDocumentAnalyzer(model=model_name)
+        else:
+            analyzer = LangextractDocumentAnalyzer(model=model_name)
         result = analyzer.analyze_document(file_path)
         if result:
             print(f"✅ Worker finished {file_name}: Type={result.document_type}, Confidence={result.confidence:.2f}")
@@ -88,16 +52,16 @@ def _analyze_document_wrapper(file_path: str, model_name: str) -> Optional[Ollam
 class IncomeTaxAssistant:
     """Main Income Tax AI Assistant Application"""
     
-    def __init__(self, financial_year: str = "2024-25"):
+    def __init__(self, financial_year: str = "2024-25", analyzer=None):
         """Initialize the tax assistant"""
         self._ensure_logging()
-        self.document_analyzer = None # Will be initialized in worker processes
+        self.document_analyzer = analyzer
         self.document_processor = DocumentProcessor()
         self.financial_year = financial_year
         self.tax_calculator = TaxCalculator(financial_year)
         
         # Analysis results storage
-        self.analyzed_documents: List[OllamaExtractedData] = []
+        self.analyzed_documents: List[Any] = []
         self.tax_summary: Dict[str, Any] = {}
         
         print("🚀 Income Tax AI Assistant Initialized")
@@ -124,15 +88,14 @@ class IncomeTaxAssistant:
             ],
         )
     
-    def analyze_documents_folder(self, folder_path: str) -> List[OllamaExtractedData]:
-        """Analyze all documents in a folder using parallel processing."""
+    def analyze_documents_folder(self, folder_path: str) -> List[Any]:
+        """Analyze all documents in a folder using the selected analyzer."""
         folder = Path(folder_path)
         
         if not folder.exists():
             print(f"❌ Folder not found: {folder_path}")
             return []
         
-        # Get all supported document files
         supported_extensions = ['.pdf', '.xlsx', '.xls', '.csv']
         document_files = []
         
@@ -149,36 +112,27 @@ class IncomeTaxAssistant:
         analyzed_docs = []
         start_time = datetime.now()
 
-        # Use multiprocessing.Pool for true parallelism
-        # Max processes can be adjusted based on system resources
-        num_processes = cpu_count() - 1 # Use all available CPU cores - 1
-        print(f"🚀 Starting parallel analysis with {num_processes} processes...")
+        for doc_file in document_files:
+            # Estimate document type
+            file_content = self.document_processor.extract_text_content(str(doc_file))
+            estimated_doc_type = self.document_processor._estimate_document_type(file_content, doc_file.name)
 
-        # Prepare arguments for the wrapper function
-        # Assuming default model 'llama3:8b' for now, can be made configurable
-        tasks = [(str(doc_file), "llama3:8b") for doc_file in document_files]
-
-        with Pool(processes=num_processes) as pool:
-            # pool.starmap is used because _analyze_document_wrapper takes multiple arguments
-            results = pool.starmap(_analyze_document_wrapper, tasks)
-
-        for result in results:
+            result = self.document_analyzer.analyze_document(str(doc_file), doc_type=estimated_doc_type)
             if result:
                 analyzed_docs.append(result)
-                print(f"✅ Finished analyzing: {result.raw_text[:50]}...") # Print partial filename or identifier
                 self._print_document_summary(result)
             
         end_time = datetime.now()
         time_taken = end_time - start_time
-        print(f"✅ Parallel analysis completed in {time_taken}")
+        print(f"✅ Analysis completed in {time_taken}")
         
         self.analyzed_documents = analyzed_docs
         return analyzed_docs
     
-    def _print_document_summary(self, doc: OllamaExtractedData):
+    def _print_document_summary(self, doc):
         """Print a summary of the analyzed document"""
         print(f"   📄 Type: {doc.document_type}")
-        print(f"   📊 Confidence: {doc.confidence:.2f}")
+        print(f"   📊 Confidence: {getattr(doc, 'confidence', 0.0):.2f}")
         print(f"   🔧 Method: {doc.extraction_method}")
         
         # Print key extracted data based on document type
@@ -285,19 +239,8 @@ class IncomeTaxAssistant:
             "analysis_date": datetime.now().isoformat()
         }
         
-        # Debugging print statements
-        print(f"DEBUG: Aggregated data by FY: {by_fy}")
-
-        # Build per-FY summaries
-        result: Dict[str, Any] = {
-            "by_financial_year": {},
-            "documents_analyzed": len(self.analyzed_documents),
-            "analysis_date": datetime.now().isoformat()
-        }
-        
         for fy, agg in by_fy.items():
             total_income = float(agg.get("salary_income", 0.0)) + float(agg.get("interest_income", 0.0)) + float(agg.get("capital_gains", 0.0))
-            print(f"DEBUG: FY {fy} - Total Income: {total_income}, Salary: {agg.get('salary_income', 0.0)}, Interest: {agg.get('interest_income', 0.0)}, Capital Gains: {agg.get('capital_gains', 0.0)}")
             
             calc = TaxCalculator(fy)
             new_tax = calc.calculate_new_regime_tax(total_income) if total_income > 0 else 0.0
@@ -312,13 +255,8 @@ class IncomeTaxAssistant:
             capped_1b = min(nps_1b, 50000.0)
             total_deductions_old = capped_80c + capped_1b
             
-            print(f"DEBUG: FY {fy} - Total Deductions (pre-cap): {base_80c_like}, NPS Tier1: {nps_tier1}, NPS 1B: {nps_1b}")
-            print(f"DEBUG: FY {fy} - Capped 80C: {capped_80c}, Capped 1B: {capped_1b}, Total Deductions (old regime): {total_deductions_old}")
-
             old_tax = calc.calculate_old_regime_tax(total_income, total_deductions_old) if total_income > 0 else 0.0
             
-            print(f"DEBUG: FY {fy} - New Regime Tax: {new_tax}, Old Regime Tax: {old_tax}")
-
             recommended = "new" if new_tax < old_tax else "old"
             result["by_financial_year"][fy] = {
                 **agg,
@@ -358,108 +296,6 @@ class IncomeTaxAssistant:
         self.tax_summary = result
         return result
     
-    def calculate_tax_summary_with_additional_data(self, rent_paid: float = 0, is_metro: bool = False) -> Dict[str, Any]:
-        """Calculate tax summary with additional user inputs like rent"""
-        print("🧮 Recalculating Tax Summary with Additional Data")
-        print("-" * 50)
-        
-        # Start with base calculation
-        tax_summary = self.calculate_tax_summary()
-        
-        # Add HRA calculation if we have salary data
-        if tax_summary["salary_income"] > 0:
-            # Get HRA from any available document (Form 16 or payslips)
-            hra_received = 0.0
-            for doc in self.analyzed_documents:
-                hra_val = 0.0
-                if hasattr(doc, 'hra_received') and doc.hra_received:
-                    hra_val = float(doc.hra_received)
-                elif hasattr(doc, 'hra') and doc.hra:
-                    hra_val = float(doc.hra)
-                if hra_val > hra_received:
-                    hra_received = hra_val
-            
-            # If HRA not found in Form 16, estimate it (typically 40-50% of basic salary)
-            if hra_received == 0:
-                # Get basic salary from Form 16
-                basic_salary = 0
-                for doc in self.analyzed_documents:
-                    if doc.document_type == "form_16" and hasattr(doc, 'basic_salary'):
-                        basic_salary = doc.basic_salary
-                        break
-                
-                if basic_salary == 0:
-                    # Estimate basic salary as 50% of gross salary
-                    basic_salary = tax_summary["salary_income"] * 0.5
-                
-                # Estimate HRA as 40% of basic salary (typical for non-metro)
-                hra_received = basic_salary * 0.4
-                print(f"🏠 Estimated HRA: ₹{hra_received:,.2f} (40% of basic salary)")
-            
-            # Calculate HRA exemption
-            if rent_paid > 0:
-                # HRA exemption calculation
-                # 1. Actual HRA received
-                # 2. Rent paid - 10% of basic salary
-                # 3. 50% of basic salary (metro) or 40% (non-metro)
-                
-                # Get basic salary from Form 16
-                basic_salary = 0
-                for doc in self.analyzed_documents:
-                    if doc.document_type == "form_16" and hasattr(doc, 'basic_salary'):
-                        basic_salary = doc.basic_salary
-                        break
-                
-                if basic_salary == 0:
-                    # Estimate basic salary as 50% of gross salary
-                    basic_salary = tax_summary["salary_income"] * 0.5
-                
-                # Calculate HRA exemption
-                rent_paid_minus_10_percent = rent_paid * 12 - (basic_salary * 0.1)
-                hra_exemption_percentage = 0.5 if is_metro else 0.4
-                hra_exemption_amount = basic_salary * hra_exemption_percentage
-                
-                # Take minimum of the three
-                hra_exemption = min(
-                    hra_received,
-                    rent_paid_minus_10_percent,
-                    hra_exemption_amount
-                )
-                
-                # Ensure HRA exemption is not negative
-                hra_exemption = max(0, hra_exemption)
-                
-                # Add HRA exemption to deductions (old regime only)
-                tax_summary["total_deductions"] += hra_exemption
-                tax_summary["hra_exemption"] = hra_exemption
-                tax_summary["rent_paid"] = rent_paid * 12
-                tax_summary["is_metro"] = is_metro
-                
-                print(f"🏠 HRA Calculation:")
-                print(f"   HRA Received: ₹{hra_received:,.2f}")
-                print(f"   Rent Paid: ₹{rent_paid * 12:,.2f}")
-                print(f"   Basic Salary: ₹{basic_salary:,.2f}")
-                print(f"   HRA Exemption: ₹{hra_exemption:,.2f}")
-        
-        # Recalculate old regime tax with updated deductions
-        if tax_summary["total_income"] > 0:
-            tax_summary["tax_liability_old_regime"] = self.tax_calculator.calculate_old_regime_tax(
-                tax_summary["total_income"],
-                tax_summary["total_deductions"]
-            )
-            
-            # Update regime recommendation
-            if tax_summary["tax_liability_new_regime"] < tax_summary["tax_liability_old_regime"]:
-                tax_summary["recommended_regime"] = "new"
-            else:
-                tax_summary["recommended_regime"] = "old"
-        
-        # Update the stored tax summary
-        self.tax_summary = tax_summary
-        
-        print(f"✅ Tax recalculated with HRA exemption: ₹{tax_summary.get('hra_exemption', 0):,.2f}")
-        return tax_summary
-    
     def _print_tax_summary(self, summary: Dict[str, Any]):
         """Print the tax summary in a formatted way"""
         print("📊 TAX SUMMARY")
@@ -494,147 +330,28 @@ class IncomeTaxAssistant:
             print(f"💰 Tax Refund: ₹{abs(additional_tax):,.2f}")
         
         print()
-    
-    def generate_report(self, output_file: Optional[str] = None):
-        """Generate a comprehensive tax analysis report"""
-        if not self.tax_summary:
-            print("❌ No tax summary available. Run calculate_tax_summary() first.")
-            return
-        
-        report = {
-            "report_metadata": {
-                "generated_at": datetime.now().isoformat(),
-                "version": "1.0",
-                "documents_analyzed": len(self.analyzed_documents)
-            },
-            "tax_summary": self.tax_summary,
-            "document_details": [
-                {
-                    "filename": Path(doc.file_path).name if doc.file_path else "Unknown",
-                    "document_type": doc.document_type,
-                    "confidence": doc.confidence,
-                    "extraction_method": doc.extraction_method,
-                    "key_data": self._extract_key_data(doc)
-                }
-                for doc in self.analyzed_documents
-            ]
-        }
-        
-        # Save report if output_file is provided
-        if output_file:
-            with open(output_file, 'w') as f:
-                json.dump(report, f, indent=2, default=str)
-            
-            print(f"📄 Report saved to: {output_file}")
-        else:
-            print("📄 Report generated but not saved to file (no output_file specified).")
-            return report # Return the report data if not saving to file
-    
-    def _extract_key_data(self, doc: OllamaExtractedData) -> Dict[str, Any]:
-        """Extract key data from a document for the report"""
-        key_data = {}
-        
-        if doc.document_type == "form_16":
-            key_data.update({
-                "gross_salary": doc.gross_salary,
-                "tax_deducted": doc.tax_deducted,
-                "employee_name": doc.employee_name,
-                "pan": doc.pan
-            })
-        
-        elif doc.document_type == "bank_interest_certificate":
-            key_data.update({
-                "interest_amount": getattr(doc, 'interest_amount', 0.0),
-                "tds_amount": getattr(doc, 'tds_amount', 0.0),
-                "bank_name": getattr(doc, 'bank_name', 'Not found')
-            })
-        
-        elif doc.document_type == "capital_gains":
-            key_data.update({
-                "total_capital_gains": getattr(doc, 'total_capital_gains', 0.0),
-                "long_term_capital_gains": getattr(doc, 'long_term_capital_gains', 0.0),
-                "short_term_capital_gains": getattr(doc, 'short_term_capital_gains', 0.0)
-            })
-        
-        elif doc.document_type == "investment":
-            key_data.update({
-                "epf_amount": getattr(doc, 'epf_amount', 0.0),
-                "ppf_amount": getattr(doc, 'ppf_amount', 0.0),
-                "elss_amount": getattr(doc, 'elss_amount', 0.0),
-                "life_insurance": getattr(doc, 'life_insurance', 0.0),
-                "health_insurance": getattr(doc, 'health_insurance', 0.0)
-            })
-        
-        return key_data
-    
-    def run_interactive_mode(self):
-        """Run the assistant in interactive mode"""
-        print("🎯 Income Tax AI Assistant - Interactive Mode")
-        print("=" * 60)
-        
-        while True:
-            print("\n📋 Available Options:")
-            print("1. 📁 Analyze documents from folder")
-            print("2. 🧮 Calculate tax summary")
-            print("3. 📄 Generate report")
-            print("4. 📊 Show current analysis")
-            print("5. 🚪 Exit")
-            
-            choice = input("\nEnter your choice (1-5): ").strip()
-            
-            if choice == "1":
-                folder_path = input("Enter folder path: ").strip()
-                if folder_path:
-                    self.analyze_documents_folder(folder_path)
-            
-            elif choice == "2":
-                if self.analyzed_documents:
-                    self.calculate_tax_summary()
-                else:
-                    print("❌ No documents analyzed. Please analyze documents first.")
-            
-            elif choice == "3":
-                if self.tax_summary:
-                    print("Generating report (will not be saved to file by default).")
-                    self.generate_report()
-                else:
-                    print("❌ No tax summary available. Please calculate tax summary first.")
-            
-            elif choice == "4":
-                if self.analyzed_documents:
-                    print(f"\n📊 Current Analysis Status:")
-                    print(f"   Documents analyzed: {len(self.analyzed_documents)}")
-                    for i, doc in enumerate(self.analyzed_documents, 1):
-                        print(f"   {i}. {doc.document_type} (confidence: {doc.confidence:.2f})")
-                else:
-                    print("❌ No documents analyzed yet.")
-            
-            elif choice == "5":
-                print("👋 Thank you for using Income Tax AI Assistant!")
-                break
-            
-            else:
-                print("❌ Invalid choice. Please enter 1-5.")
-
 
 def main():
     """Main entry point"""
-    assistant = IncomeTaxAssistant()
-    
-    # Check if running in interactive mode or with command line arguments
-    if len(sys.argv) > 1:
-        # Command line mode
-        if sys.argv[1] == "--folder" and len(sys.argv) > 2:
-            folder_path = sys.argv[2]
-            assistant.analyze_documents_folder(folder_path)
-            assistant.calculate_tax_summary()
-            assistant.generate_report()
-        else:
-            print("Usage: python main.py --folder <folder_path>")
+    parser = argparse.ArgumentParser(description="Income Tax AI Assistant")
+    parser.add_argument("--folder", help="Path to the folder containing tax documents.")
+    parser.add_argument("--analyzer", default="ollama", choices=["ollama", "langextract"], help="The document analyzer to use.")
+    args = parser.parse_args()
+
+    if args.analyzer == "langextract":
+        analyzer = LangextractDocumentAnalyzer()
     else:
-        # Interactive mode
-        assistant.run_interactive_mode()
+        analyzer = OllamaDocumentAnalyzer()
+
+    assistant = IncomeTaxAssistant(analyzer=analyzer)
+
+    if args.folder:
+        assistant.analyze_documents_folder(args.folder)
+        assistant.calculate_tax_summary()
+    else:
+        # Interactive mode can be added here if needed
+        print("Usage: python src/main.py --folder <folder_path> [--analyzer <ollama|langextract>]")
 
 
 if __name__ == "__main__":
-    main() 
+    main()

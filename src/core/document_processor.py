@@ -11,6 +11,7 @@ import pandas as pd
 from pathlib import Path
 from typing import Optional, Dict, Any
 import logging
+from src.models.langextract_model import LangExtractModel
 
 class DocumentProcessor:
     """Document processor for handling various file types"""
@@ -19,6 +20,7 @@ class DocumentProcessor:
         """Initialize document processor"""
         self.supported_extensions = ['.pdf', '.xlsx', '.xls', '.csv']
         self.logger = logging.getLogger(__name__)
+        self.langextract_model = LangExtractModel()
         
         self.logger.info("Document Processor initialized")
     
@@ -150,6 +152,24 @@ class DocumentProcessor:
         # Default to unknown
         return "unknown"
     
+    def extract_structured_data(self, file_path: str) -> Dict[str, Any]:
+        """Extract structured data from a document using langextract"""
+        text_content = self.extract_text_content(file_path)
+        if not text_content:
+            return {"error": "Could not extract text from the document."}
+
+        # TODO: Get the prompt and examples from the user.
+        prompt = "Please extract the following information from the document:"
+        examples = []
+
+        extracted_data = self.langextract_model.extract_information(
+            document_text=text_content,
+            prompt=prompt,
+            examples=examples
+        )
+
+        return extracted_data
+
     def validate_document(self, file_path: str) -> Dict[str, Any]:
         """Validate if a document can be processed"""
         validation_result = {

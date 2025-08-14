@@ -9,7 +9,7 @@ from pathlib import Path
 # Add src to path
 sys.path.append(str(Path(__file__).parent / "src"))
 
-from src.core.ollama_document_analyzer import OllamaDocumentAnalyzer
+from src.core.document_processing.ollama_analyzer import OllamaDocumentAnalyzer
 
 def debug_form16_analysis():
     """Debug the Form16 analysis to see exact Ollama response"""
