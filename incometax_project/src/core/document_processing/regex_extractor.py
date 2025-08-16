@@ -32,26 +32,45 @@ def extract_form16_perquisites_regex(json_data):
         basic_salary_pattern = r"Salary as per provisions contained in section 17\(1\)\s*([\d,]+\.\d{2})"
         perquisites_pattern = r"Value of perquisites under section 17\(2\).*?([\d,]+\.\d{2})"
         total_gross_salary_pattern = r"Gross Salary.*Total\s*([\d,]+\.\d{2})"
+        
+        # Additional patterns for HRA and deductions based on actual Form16 format
+        hra_pattern = r"House rent allowance under section 10\(13A\)[\s\S]*?([\d,]+\.?\d*)"
+        professional_tax_pattern = r"Tax on employment under section 16\(iii\)[\s\S]*?([\d,]+\.?\d*)"
+        epf_pattern = r"contributions to provident fund etc\. under section 80C[\s\S]*?([\d,]+\.?\d*)"
 
         basic_match = re.search(basic_salary_pattern, raw_text, re.IGNORECASE)
         perquisites_match = re.search(perquisites_pattern, raw_text, re.IGNORECASE)
         total_gross_match = re.search(total_gross_salary_pattern, raw_text, re.IGNORECASE | re.DOTALL)
+        hra_match = re.search(hra_pattern, raw_text, re.IGNORECASE)
+        professional_tax_match = re.search(professional_tax_pattern, raw_text, re.IGNORECASE)
+        epf_match = re.search(epf_pattern, raw_text, re.IGNORECASE)
 
         if basic_match and perquisites_match and total_gross_match:
             basic_salary = float(basic_match.group(1).replace(',', ''))
             perquisites = float(perquisites_match.group(1).replace(',', ''))
             total_gross_salary = float(total_gross_match.group(1).replace(',', ''))
 
+            # Extract additional fields
+            hra_received = float(hra_match.group(1).replace(',', '')) if hra_match else 0.0
+            professional_tax = float(professional_tax_match.group(1).replace(',', '')) if professional_tax_match else 0.0
+            epf_amount = float(epf_match.group(1).replace(',', '')) if epf_match else 0.0
+
             print(f"✅ Found Form 16 Part B data by regex:")
             print(f"   Basic Salary: ₹{basic_salary:,.2f}")
             print(f"   Perquisites: ₹{perquisites:,.2f}")
             print(f"   Total Gross Salary: ₹{total_gross_salary:,.2f}")
+            print(f"   HRA Received: ₹{hra_received:,.2f}")
+            print(f"   Professional Tax: ₹{professional_tax:,.2f}")
+            print(f"   EPF Amount: ₹{epf_amount:,.2f}")
 
             return {
                 'basic_salary': basic_salary,
                 'perquisites': perquisites,
                 'total_gross_salary': total_gross_salary,
-                'gross_salary': total_gross_salary # Also update gross_salary for consistency
+                'gross_salary': total_gross_salary,
+                'hra_received': hra_received,
+                'professional_tax': professional_tax,
+                'epf_amount': epf_amount
             }
         else:
             print("❌ Could not find all required fields in Form 16 Part B using regex.")

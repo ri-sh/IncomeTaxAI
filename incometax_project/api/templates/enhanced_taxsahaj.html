@@ -919,28 +919,30 @@
                         <strong>📂 Select Multiple Documents:</strong> Drag and drop or browse to select all your tax documents at once. Our local AI will analyze them together for comprehensive tax optimization.
                     </p>
                     
-                    <div class="upload-zone" ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
-                        <div onclick="triggerFileUpload()" style="cursor: pointer; padding: 1rem;">
+                    <div class="upload-zone" ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" onclick="triggerFileUpload()">
+                        <div style="cursor: pointer; padding: 1rem;">
                             <div class="upload-icon">📁</div>
                             <h3>Drop Multiple Documents Here</h3>
                             <p><strong>📂 Select Multiple Files</strong> - Form 16, Bank Statements, Investment Proofs, etc.</p>
                             <p style="font-size: 0.9rem; color: #48bb78; margin-top: 0.5rem;">✨ Tip: Hold Ctrl/Cmd to select multiple files at once</p>
-                            <button onclick="event.stopPropagation(); triggerFileUpload()" style="
-                                background: rgba(72, 187, 120, 0.2);
-                                border: 2px solid #48bb78;
-                                color: #48bb78;
-                                padding: 0.75rem 1.5rem;
-                                border-radius: 10px;
-                                cursor: pointer;
-                                font-weight: 600;
-                                margin-top: 1rem;
-                                transition: all 0.3s ease;
-                            " onmouseover="this.style.background='rgba(72, 187, 120, 0.3)'" 
-                               onmouseout="this.style.background='rgba(72, 187, 120, 0.2)'">
-                                📁 Browse Files
-                            </button>
+                            <label for="fileInput" style="display: inline-block;">
+                                <button type="button" id="browseFilesBtn" style="
+                                    background: rgba(72, 187, 120, 0.2);
+                                    border: 2px solid #48bb78;
+                                    color: #48bb78;
+                                    padding: 0.75rem 1.5rem;
+                                    border-radius: 10px;
+                                    cursor: pointer;
+                                    font-weight: 600;
+                                    margin-top: 1rem;
+                                    transition: all 0.3s ease;
+                                " onmouseover="this.style.background='rgba(72, 187, 120, 0.3)'" 
+                                   onmouseout="this.style.background='rgba(72, 187, 120, 0.2)'">
+                                    📁 Browse Files
+                                </button>
+                            </label>
                         </div>
-                        <input type="file" id="fileInput" style="display: none;" multiple accept=".pdf,.xlsx,.xls,.csv,.jpg,.jpeg,.png,.doc,.docx">
+                        <input type="file" id="fileInput" style="display: none;" multiple accept=".pdf,.xlsx,.xls,.csv,.jpg,.jpeg,.png,.doc,.docx" onchange="handleFileSelect(event)">
                         
                         <!-- File Preview Area -->
                         <div id="filePreview" style="display: none; margin-top: 2rem; text-align: left;">
@@ -1445,17 +1447,169 @@
             document.querySelector('.scroll-progress').style.width = scrollPercent + '%';
         }
 
+        // Notification System
+        function showNotification(message, type = 'info') {
+            // Remove existing notifications
+            const existingNotification = document.querySelector('.notification');
+            if (existingNotification) {
+                existingNotification.remove();
+            }
+
+            const notification = document.createElement('div');
+            notification.className = 'notification';
+            notification.innerHTML = message;
+            
+            const colors = {
+                'success': '#48bb78',
+                'warning': '#ed8936', 
+                'error': '#f56565',
+                'info': '#4299e1'
+            };
+            
+            notification.style.cssText = `
+                position: fixed;
+                top: 100px;
+                right: 20px;
+                background: rgba(0, 0, 0, 0.9);
+                color: white;
+                padding: 1rem 1.5rem;
+                border-radius: 10px;
+                border-left: 4px solid ${colors[type]};
+                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+                z-index: 1000;
+                max-width: 400px;
+                animation: slideInRight 0.3s ease;
+            `;
+            
+            document.body.appendChild(notification);
+            
+            // Auto remove after 4 seconds
+            setTimeout(() => {
+                if (notification && notification.parentNode) {
+                    notification.style.animation = 'slideOutRight 0.3s ease';
+                    setTimeout(() => notification.remove(), 300);
+                }
+            }, 4000);
+        }
+
+        // Add CSS animations and privacy styles
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slideInRight {
+                from { transform: translateX(100%); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+            }
+            @keyframes slideOutRight {
+                from { transform: translateX(0); opacity: 1; }
+                to { transform: translateX(100%); opacity: 0; }
+            }
+            
+            /* Privacy Styles */
+            .privacy-toggle {
+                background: rgba(72, 187, 120, 0.2);
+                border: 1px solid #48bb78;
+                color: #48bb78;
+                padding: 0.25rem 0.5rem;
+                border-radius: 5px;
+                cursor: pointer;
+                font-size: 0.8rem;
+                margin-left: 0.5rem;
+                transition: all 0.3s ease;
+            }
+            
+            .privacy-toggle:hover {
+                background: rgba(72, 187, 120, 0.3);
+            }
+            
+            .financial-value {
+                font-family: 'Courier New', monospace;
+                letter-spacing: 1px;
+            }
+            
+            .masked-value {
+                color: #a0aec0;
+                background: rgba(160, 174, 192, 0.1);
+                padding: 0.2rem 0.4rem;
+                border-radius: 3px;
+            }
+            
+            .privacy-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                margin-bottom: 1rem;
+            }
+        `;
+        document.head.appendChild(style);
+
+        // Privacy Engine Functions
+        let privacyMode = true; // Start with privacy enabled
+
+        function maskAmount(amount, showCurrency = true) {
+            if (!privacyMode) {
+                return (showCurrency ? '₹' : '') + amount.toLocaleString();
+            }
+            
+            const amountStr = amount.toString();
+            const length = amountStr.length;
+            let masked;
+            
+            if (length <= 2) {
+                masked = 'XX';
+            } else if (length <= 4) {
+                masked = 'X,XXX';
+            } else if (length <= 6) {
+                masked = 'XX,XXX';
+            } else if (length <= 8) {
+                masked = 'XX,XX,XXX';
+            } else {
+                masked = 'X,XX,XX,XXX';
+            }
+            
+            return (showCurrency ? '₹' : '') + masked;
+        }
+
+        function togglePrivacy() {
+            privacyMode = !privacyMode;
+            
+            // Update all privacy toggles
+            document.querySelectorAll('.privacy-toggle').forEach(btn => {
+                btn.innerHTML = privacyMode ? '👁️‍🗨️ Show' : '🙈 Hide';
+                btn.title = privacyMode ? 'Click to show actual amounts' : 'Click to hide amounts';
+            });
+            
+            // Update all financial values
+            document.querySelectorAll('[data-amount]').forEach(element => {
+                const amount = parseFloat(element.dataset.amount);
+                const showCurrency = element.dataset.currency !== 'false';
+                element.innerHTML = maskAmount(amount, showCurrency);
+            });
+            
+            // Update privacy status indicator
+            const indicator = document.getElementById('privacyIndicator');
+            if (indicator) {
+                indicator.innerHTML = privacyMode ? 
+                    '🔒 Privacy Mode: ON' : 
+                    '🔓 Privacy Mode: OFF';
+                indicator.style.color = privacyMode ? '#48bb78' : '#ffc107';
+            }
+        }
+
+        function createPrivacyToggleButton() {
+            return `<button class="privacy-toggle" onclick="togglePrivacy()" title="Toggle privacy mode">👁️‍🗨️ Show</button>`;
+        }
+
         // File Upload Functionality
         function triggerFileUpload() {
             document.getElementById('fileInput').click();
         }
 
-        document.getElementById('fileInput').addEventListener('change', function(e) {
-            const files = e.target.files;
+        function handleFileSelect(event) {
+            const files = Array.from(event.target.files);
             if (files.length > 0) {
-                simulateProcessing();
+                addFilesToSelection(files);
             }
-        });
+        }
 
         function simulateProcessing() {
             const processingIndicator = document.getElementById('processingIndicator');
@@ -1477,7 +1631,7 @@
                     // Processing complete
                     setTimeout(() => {
                         processingIndicator.style.display = 'none';
-                        alert('🎉 Documents processed successfully! Ready to file your taxes with maximum savings.');
+                        showNotification('🎉 Documents processed successfully! Ready to file your taxes with maximum savings.', 'success');
                         // Reset for demo
                         steps.forEach(step => document.getElementById(step).classList.remove('active'));
                     }, 1000);
@@ -1590,7 +1744,7 @@
             });
             
             if (validFiles.length !== files.length) {
-                alert(`⚠️ Some files were skipped. Only PDF, Excel, CSV, and image files are supported.`);
+                showNotification('⚠️ Some files were skipped. Only PDF, Excel, CSV, and image files are supported.', 'warning');
             }
             
             // Add new files to selection (avoid duplicates)
@@ -1702,7 +1856,7 @@
         function processSelectedFiles() {
             console.log('processSelectedFiles called with files:', selectedFiles.length);
             if (selectedFiles.length === 0) {
-                alert('⚠️ Please select at least one document to process.');
+                showNotification('⚠️ Please select at least one document to process.', 'warning');
                 return;
             }
             
@@ -2087,7 +2241,7 @@
             } catch (error) {
                 console.error('Error processing files:', error);
                 closeLiveProcessingDialog();
-                alert('Error processing documents: ' + error.message);
+                showNotification('Error processing documents: ' + error.message, 'error');
             }
         }
         
@@ -2316,7 +2470,7 @@
                     } else if (data.task_status === 'FAILURE') {
                         clearInterval(pollInterval);
                         closeLiveProcessingDialog();
-                        alert('Analysis failed. Please try again.');
+                        showNotification('Analysis failed. Please try again.', 'error');
                     }
                     
                 } catch (error) {
@@ -2374,7 +2528,7 @@
                 } else if (data.task_status === 'FAILURE') {
                     // Analysis failed
                     document.getElementById('processingIndicator').style.display = 'none';
-                    alert('Analysis failed. Please try again.');
+                    showNotification('Analysis failed. Please try again.', 'error');
                 } else {
                     // Still processing, poll again
                     setTimeout(() => pollAnalysisProgress(sessionId), 2000);
@@ -2382,7 +2536,7 @@
             } catch (error) {
                 console.error('Error checking progress:', error);
                 document.getElementById('processingIndicator').style.display = 'none';
-                alert('Error checking progress: ' + error.message);
+                showNotification('Error checking progress: ' + error.message, 'error');
             }
         }
         
@@ -2475,6 +2629,12 @@
                                 margin-bottom: 1rem;
                             ">📊 Tax Analysis Results</h1>
                             <p style="color: #a0aec0; font-size: 1.2rem;">AI-powered analysis of your tax documents</p>
+                            
+                            <!-- Privacy Status Bar -->
+                            <div style="background: rgba(72, 187, 120, 0.1); border: 1px solid #48bb78; border-radius: 10px; padding: 1rem; margin: 2rem auto; max-width: 500px; display: flex; align-items: center; justify-content: space-between;">
+                                <span id="privacyIndicator" style="color: #48bb78; font-weight: 600;">🔒 Privacy Mode: ON</span>
+                                <button class="privacy-toggle" onclick="togglePrivacy()" title="Toggle privacy mode">👁️‍🗨️ Show</button>
+                            </div>
                         </div>
                         
                         <!-- Final Recommendation Banner -->
@@ -2505,7 +2665,7 @@
                                     ${analysisData?.regime_comparison?.old_regime_position || 'Refund available'}
                                 </div>
                                 <div style="color: rgba(255,255,255,0.8);">
-                                    💰 You save <strong>₹${(analysisData?.regime_comparison?.savings_by_old_regime || 0).toLocaleString()}</strong> by choosing the Old Regime
+                                    💰 You save <strong><span class="financial-value" data-amount="${analysisData?.regime_comparison?.savings_by_old_regime || 0}" data-currency="true">₹${(analysisData?.regime_comparison?.savings_by_old_regime || 0).toLocaleString()}</span></strong> by choosing the Old Regime
                                 </div>
                             </div>
                         </div>
@@ -2527,10 +2687,10 @@
                                 <h3 style="color: #e2e8f0; margin-bottom: 1rem;">A. Salary Income (from Form 16):</h3>
                                 <div style="background: rgba(72, 187, 120, 0.05); padding: 1.5rem; border-radius: 10px; border-left: 4px solid #48bb78;">
                                     <div style="display: grid; gap: 0.5rem; font-family: 'Courier New', monospace;">
-                                        <div style="color: #a0aec0;">Basic Salary, Allowances, etc. (Section 17(1)): <span style="float: right; color: #e2e8f0;">₹ ${(analysisData?.income_breakdown?.salary_income?.basic_and_allowances_17_1 || 0).toLocaleString()}.00</span></div>
-                                        <div style="color: #a0aec0;">Perquisites (ESPP Gain) (Section 17(2)): <span style="float: right; color: #e2e8f0;">+ ₹ ${(analysisData?.income_breakdown?.salary_income?.perquisites_espp_17_2 || 0).toLocaleString()}.00</span></div>
+                                        <div style="color: #a0aec0;">Basic Salary, Allowances, etc. (Section 17(1)): <span style="float: right; color: #e2e8f0;" class="financial-value" data-amount="${analysisData?.income_breakdown?.salary_income?.basic_and_allowances_17_1 || 0}" data-currency="true">₹ ${(analysisData?.income_breakdown?.salary_income?.basic_and_allowances_17_1 || 0).toLocaleString()}.00</span></div>
+                                        <div style="color: #a0aec0;">Perquisites (ESPP Gain) (Section 17(2)): <span style="float: right; color: #e2e8f0;" class="financial-value" data-amount="${analysisData?.income_breakdown?.salary_income?.perquisites_espp_17_2 || 0}" data-currency="true">+ ₹ ${(analysisData?.income_breakdown?.salary_income?.perquisites_espp_17_2 || 0).toLocaleString()}.00</span></div>
                                         <div style="border-top: 1px solid rgba(72, 187, 120, 0.3); margin: 0.5rem 0; padding-top: 0.5rem;">
-                                            <div style="color: #48bb78; font-weight: bold;">**Total Salary Income:** <span style="float: right;">**₹ ${(analysisData?.income_breakdown?.salary_income?.total_salary || 0).toLocaleString()}.00**</span></div>
+                                            <div style="color: #48bb78; font-weight: bold;">**Total Salary Income:** <span style="float: right;" class="financial-value" data-amount="${analysisData?.income_breakdown?.salary_income?.total_salary || 0}" data-currency="true">**₹ ${(analysisData?.income_breakdown?.salary_income?.total_salary || 0).toLocaleString()}.00**</span></div>
                                         </div>
                                     </div>
                                 </div>
@@ -2541,10 +2701,10 @@
                                 <h3 style="color: #e2e8f0; margin-bottom: 1rem;">B. Income from Other Sources:</h3>
                                 <div style="background: rgba(72, 187, 120, 0.05); padding: 1.5rem; border-radius: 10px; border-left: 4px solid #48bb78;">
                                     <div style="display: grid; gap: 0.5rem; font-family: 'Courier New', monospace;">
-                                        <div style="color: #a0aec0;">Interest from Bank Deposits: <span style="float: right; color: #e2e8f0;">₹ ${(analysisData?.income_breakdown?.other_income?.bank_interest || 0).toLocaleString()}.00</span></div>
-                                        <div style="color: #a0aec0;">Dividend Income from Stocks: <span style="float: right; color: #e2e8f0;">+ ₹ ${(analysisData?.income_breakdown?.other_income?.dividend_income || 0).toLocaleString()}</span></div>
+                                        <div style="color: #a0aec0;">Interest from Bank Deposits: <span style="float: right; color: #e2e8f0;" class="financial-value" data-amount="${analysisData?.income_breakdown?.other_income?.bank_interest || 0}" data-currency="true">₹ ${(analysisData?.income_breakdown?.other_income?.bank_interest || 0).toLocaleString()}.00</span></div>
+                                        <div style="color: #a0aec0;">Dividend Income from Stocks: <span style="float: right; color: #e2e8f0;" class="financial-value" data-amount="${analysisData?.income_breakdown?.other_income?.dividend_income || 0}" data-currency="true">+ ₹ ${(analysisData?.income_breakdown?.other_income?.dividend_income || 0).toLocaleString()}</span></div>
                                         <div style="border-top: 1px solid rgba(72, 187, 120, 0.3); margin: 0.5rem 0; padding-top: 0.5rem;">
-                                            <div style="color: #48bb78; font-weight: bold;">**Total Other Income:** <span style="float: right;">**₹ ${(analysisData?.income_breakdown?.other_income?.total_other || 0).toLocaleString()}**</span></div>
+                                            <div style="color: #48bb78; font-weight: bold;">**Total Other Income:** <span style="float: right;" class="financial-value" data-amount="${analysisData?.income_breakdown?.other_income?.total_other || 0}" data-currency="true">**₹ ${(analysisData?.income_breakdown?.other_income?.total_other || 0).toLocaleString()}**</span></div>
                                         </div>
                                     </div>
                                 </div>
@@ -2808,9 +2968,14 @@
                 
                 document.body.appendChild(resultsPage);
                 
+                // Initialize privacy mode after DOM is ready
+                setTimeout(() => {
+                    togglePrivacy(); // This will apply masking since privacyMode starts as true
+                }, 100);
+                
             } catch (error) {
                 console.error('Error loading results:', error);
-                alert('Error loading results: ' + error.message);
+                showNotification('Error loading results: ' + error.message, 'error');
             }
         }
         
@@ -3008,13 +3173,7 @@
             window.open(`/api/download_report/?session_id=${sessionId}`, '_blank');
         }
         
-        // Override the original file input handler
-        document.getElementById('fileInput').addEventListener('change', function(e) {
-            const files = Array.from(e.target.files);
-            if (files.length > 0) {
-                addFilesToSelection(files);
-            }
-        });
+        // File input handler is now managed in DOMContentLoaded event above
         
         // Add event listener for process button when DOM is ready
         document.addEventListener('DOMContentLoaded', function() {

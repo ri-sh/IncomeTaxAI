@@ -177,13 +177,33 @@ def _create_structured_prompt(doc_type: str, schema, text_content: str):
     specific_instructions = ""
     if doc_type == "form_16":
         specific_instructions = f"""
-        For Form 16 documents, extract all relevant financial figures.
-        - **Gross Salary:** Look for "Gross Salary" or "Income chargeable under the head 'Salaries'" in Part B. If multiple salary figures are present, prioritize the total gross salary for the financial year.
-        - **Tax Deducted:** Find the "Tax payable" or "Total tax deducted" amount.
-        - **Deductions (Chapter VI-A):** Extract amounts for 80C, 80CCD(1B), 80D, etc. Look for sections like "Deductions under Chapter VI-A". Sum up all applicable deductions.
-        - **Perquisites:** Extract from "Value of perquisites under section 17(2)".
-        - **Employee/Employer Details:** Extract Employee Name, PAN, Employer Name, Employer TAN.
-        - If a specific field is not found, return 0.0 for numeric values and "" for strings.
+        For Form 16 documents, carefully extract ALL financial data from the complete document:
+        
+        **SALARY EXTRACTION:**
+        - **gross_salary/total_gross_salary:** Look for "Gross Salary" OR "Income chargeable under the head 'Salaries'" in Part B
+        - **basic_salary:** Look for "Salary as per provisions contained in section 17(1)"
+        - **perquisites:** Look for "Value of perquisites under section 17(2)"
+        - **hra_received:** Look for "House rent allowance" under allowances section
+        
+        **TAX & DEDUCTIONS:**
+        - **tax_deducted:** Find "Total tax deducted" OR quarterly TDS amounts
+        - **epf_amount:** Look for "Employee Provident Fund" OR "contributions to provident fund etc. under section 80C"
+        - **professional_tax:** Look for "Tax on employment under section 16(iii)" OR "Professional Tax"
+        
+        **EMPLOYEE DETAILS:**
+        - **employee_name:** Employee name from the form header
+        - **pan:** Employee PAN number
+        - **employer_name:** Employer/Company name
+        - **financial_year:** Extract the assessment year (e.g., "2024-25")
+        
+        **IMPORTANT EXTRACTION RULES:**
+        1. Read the ENTIRE document - Form16 can be 8-10 pages long
+        2. Look for EXACT section references like "section 17(1)", "section 16(iii)", "section 80C"
+        3. For numerical values, extract the final/total amount, not interim calculations
+        4. If multiple salary figures exist, use the annual total, not quarterly amounts
+        5. Professional Tax is usually ₹200-2400 annually
+        6. EPF is typically 12% of basic salary, capped at ₹1.8L annually
+        7. Return 0.0 for numeric fields not found, "" for missing strings
         """
 
     elif doc_type == "payslip":

@@ -7,10 +7,10 @@ def extract_pdf_text(file_path):
     camelot_tables_text = []
 
     try:
-        # Limit to first 5 pages to prevent hanging on large PDFs
-        tables = camelot.read_pdf(str(file_path), pages='1-5', flavor='lattice', suppress_stdout=True)
+        # Limit to first 10 pages to cover full Form16 (9 pages) and other documents
+        tables = camelot.read_pdf(str(file_path), pages='1-10', flavor='lattice', suppress_stdout=True)
         if not tables:
-            tables = camelot.read_pdf(str(file_path), pages='1-5', flavor='stream', suppress_stdout=True)
+            tables = camelot.read_pdf(str(file_path), pages='1-10', flavor='stream', suppress_stdout=True)
 
         if tables:
             for i, table in enumerate(tables):

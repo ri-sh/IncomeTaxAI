@@ -21,7 +21,10 @@ def _convert_ollama_data_to_expected_format(ollama_data, filename):
         'form_16': 'form16',
         'payslip': 'salary_slip', 
         'bank_interest_certificate': 'bank_interest_certificate',
-        'capital_gains': 'stocks_capital_gains'
+        'capital_gains': 'stocks_capital_gains',
+        'investment': 'investment',
+        'mutual_fund_elss_statement': 'mutual_fund_elss_statement',
+        'nps_statement': 'nps_statement'
     }
     
     # Determine document type
@@ -42,6 +45,13 @@ def _convert_ollama_data_to_expected_format(ollama_data, filename):
                 "perquisites_espp": ollama_data.perquisites,
                 "gross_salary": ollama_data.total_gross_salary,
                 "hra_received": ollama_data.hra_received
+            },
+            "deductions": {
+                "pf_employee": ollama_data.epf_amount,
+                "professional_tax": ollama_data.professional_tax
+            },
+            "exemptions": {
+                "hra_exemption": ollama_data.hra_received  # Base for HRA exemption calculation
             },
             "tax_details": {
                 "total_tds": ollama_data.tax_deducted
@@ -68,6 +78,25 @@ def _convert_ollama_data_to_expected_format(ollama_data, filename):
                 "long_term_capital_gains": ollama_data.long_term_capital_gains,
                 "short_term_capital_gains": ollama_data.short_term_capital_gains,
                 "dividend_income": 13427.85  # For now use the known value, later extract from document
+            }
+        }
+    elif mapped_doc_type == 'mutual_fund_elss_statement':
+        return {
+            "document_type": "mutual_fund_elss_statement",
+            "financial_year": ollama_data.financial_year or "2024-25",
+            "elss_investments": {
+                "total_investment": ollama_data.elss_amount or ollama_data.total_investment,
+                "fund_name": ollama_data.fund_name if hasattr(ollama_data, 'fund_name') else "Unknown"
+            }
+        }
+    elif mapped_doc_type == 'nps_statement':
+        return {
+            "document_type": "nps_statement",
+            "financial_year": ollama_data.financial_year or "2024-25",
+            "nps_contributions": {
+                "additional_contribution": ollama_data.nps_80ccd1b,
+                "tier1_contribution": ollama_data.nps_tier1_contribution,
+                "employer_contribution": ollama_data.nps_employer_contribution
             }
         }
     else:
@@ -380,8 +409,25 @@ def _generate_final_summary(session, completed_docs):
         
         # TDS and refund/payable calculation - using AI-extracted value
         tds_paid = tax_data.get('total_tds', 0) if tax_data else 0
+        
+        # Debug logging for TDS extraction
+        logger.info(f"TDS Calculation Debug:")
+        logger.info(f"  tax_data: {tax_data}")
+        logger.info(f"  tds_paid extracted: ₹{tds_paid:,.2f}")
+        logger.info(f"  total_tax_old: ₹{total_tax_old:,.2f}")
+        
+        # If TDS is 0, try to get it from salary data as fallback
+        if tds_paid == 0 and salary_data:
+            salary_tds = salary_data.get('tax_deducted', 0)
+            if salary_tds > 0:
+                tds_paid = salary_tds
+                logger.info(f"  Using salary TDS as fallback: ₹{tds_paid:,.2f}")
+        
         refund_old = tds_paid - total_tax_old
         additional_tax_new = total_tax_new - tds_paid
+        
+        logger.info(f"  refund_old: ₹{refund_old:,.2f}")
+        logger.info(f"  additional_tax_new: ₹{additional_tax_new:,.2f}")
         
         # Create comprehensive final summary matching report structure
         final_summary = {
@@ -693,8 +739,25 @@ def process_session_analysis_distributed(self, session_id):
             
             # TDS and refund/payable calculation - using AI-extracted value
             tds_paid = tax_data.get('total_tds', 0) if tax_data else 0
+            
+            # Debug logging for TDS extraction
+            logger.info(f"TDS Calculation Debug (Session Level):")
+            logger.info(f"  tax_data: {tax_data}")
+            logger.info(f"  tds_paid extracted: ₹{tds_paid:,.2f}")
+            logger.info(f"  total_tax_old: ₹{total_tax_old:,.2f}")
+            
+            # If TDS is 0, try to get it from salary data as fallback
+            if tds_paid == 0 and salary_data:
+                salary_tds = salary_data.get('tax_deducted', 0)
+                if salary_tds > 0:
+                    tds_paid = salary_tds
+                    logger.info(f"  Using salary TDS as fallback: ₹{tds_paid:,.2f}")
+            
             refund_old = tds_paid - total_tax_old
             additional_tax_new = total_tax_new - tds_paid
+            
+            logger.info(f"  refund_old: ₹{refund_old:,.2f}")
+            logger.info(f"  additional_tax_new: ₹{additional_tax_new:,.2f}")
             
             # Create comprehensive final summary matching report structure
             final_summary = {

@@ -68,9 +68,14 @@ class OllamaExtractedData:
     short_term_capital_gains: float = 0.0
     number_of_transactions: int = 0
     epf_amount: float = 0.0
+    professional_tax: float = 0.0
     ppf_amount: float = 0.0
     life_insurance: float = 0.0
     elss_amount: float = 0.0
+    total_investment: float = 0.0
+    nps_tier1_contribution: float = 0.0
+    nps_80ccd1b: float = 0.0
+    nps_employer_contribution: float = 0.0
     health_insurance: float = 0.0
     accrued_interest: float = 0.0
     raw_text: str = ""
