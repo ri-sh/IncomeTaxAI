@@ -7,6 +7,7 @@ from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from src.main import IncomeTaxAssistant
 from src.core.document_processing.ollama_analyzer import OllamaDocumentAnalyzer
+from api.utils.tax_calculator import IncomeTaxCalculator, DeductionCalculator
 import dataclasses
 import os
 import gc
@@ -334,102 +335,54 @@ def _generate_final_summary(session, completed_docs):
                 elif doc_type == 'mutual_fund_capital_gains':
                     capital_gains['mutual_funds'] = data.get('capital_gains', {}).get('total_gains', 0)
         
-        # Calculate comprehensive tax analysis using AI-extracted values
-        # Section 17(1): Basic salary + allowances  
+        # Extract and aggregate income data from AI analysis
         basic_and_allowances = salary_data.get('total_section_17_1', 0)
-        # Section 17(2): Perquisites (ESPP gains)
         perquisites_espp = salary_data.get('perquisites_espp', 0)
-        # Total salary income = Section 17(1) + Section 17(2)
         total_salary_income = basic_and_allowances + perquisites_espp
-        
-        # Other income from bank interest and dividends
         total_other_income = bank_interest + dividend_income
-        # Gross Total Income = Salary + Other Income
         gross_total_income = total_salary_income + total_other_income
         
-        # Deductions for Old Regime - using AI-extracted values
-        # Calculate HRA exemption dynamically (min of: actual HRA received, 50% of salary, rent paid - 10% of salary)
-        # For now, use 50% of HRA received as approximation
-        hra_exemption = min(hra_received * 0.5, hra_received) if hra_received > 0 else 0
+        # Calculate deductions using utility classes
+        old_regime_deductions = DeductionCalculator.calculate_old_regime_deductions(
+            hra_received=hra_received,
+            basic_salary=basic_and_allowances,  # Use as basic salary approximation
+            elss_investments=investments_80c,
+            employee_pf=employee_pf,
+            nps_additional=nps_80ccd_1b,
+            professional_tax=professional_tax_extracted if professional_tax_extracted > 0 else 0,
+            standard_deduction=50000
+        )
         
-        # Section 80C: ELSS + Employee PF, capped at 1.5L
-        section_80c = min(150000, investments_80c + employee_pf)
+        new_regime_deductions = DeductionCalculator.calculate_new_regime_deductions(
+            standard_deduction=50000  # Using ₹50K for FY 2024-25 (updated to ₹75K in some cases)
+        )
         
-        # Section 80CCD(1B): NPS additional, capped at 50K
-        section_80ccd_1b = min(50000, nps_80ccd_1b)
+        # Use the comprehensive tax calculator for regime comparison
+        tax_comparison = IncomeTaxCalculator.compare_tax_regimes(
+            gross_income=gross_total_income,
+            old_regime_deductions=old_regime_deductions['total_deductions'],
+            new_regime_deductions=new_regime_deductions['total_deductions'],
+            tds_paid=tax_data.get('total_tds', 0) if tax_data else 0
+        )
         
-        # Standard deduction and professional tax
-        standard_deduction = 50000  # Fixed by law
-        professional_tax = professional_tax_extracted if professional_tax_extracted > 0 else 0
+        # Extract calculated values for legacy format compatibility
+        old_regime_calc = tax_comparison['old_regime']['tax_calculation']
+        new_regime_calc = tax_comparison['new_regime']['tax_calculation']
+        old_regime_payment = tax_comparison['old_regime']['payment_details']
+        new_regime_payment = tax_comparison['new_regime']['payment_details']
         
-        total_deductions_old = hra_exemption + section_80c + section_80ccd_1b + standard_deduction + professional_tax
-        
-        # Tax calculations
-        taxable_income_old = gross_total_income - total_deductions_old
-        taxable_income_new = gross_total_income - standard_deduction  # Only standard deduction in new regime
-        
-        # Old Regime Tax Calculation
-        def calculate_tax(income):
-            if income <= 250000:
-                return 0
-            elif income <= 500000:
-                return (income - 250000) * 0.05
-            elif income <= 1000000:
-                return 12500 + (income - 500000) * 0.20
-            else:
-                return 112500 + (income - 1000000) * 0.30
-        
-        tax_old = calculate_tax(taxable_income_old)
-        cess_old = tax_old * 0.04
-        total_tax_old = tax_old + cess_old
-        
-        # New Regime Tax Calculation (updated rates)
-        def calculate_tax_new(income):
-            if income <= 300000:
-                return 0
-            elif income <= 600000:
-                return (income - 300000) * 0.05
-            elif income <= 900000:
-                return 15000 + (income - 600000) * 0.10
-            elif income <= 1200000:
-                return 45000 + (income - 900000) * 0.15
-            elif income <= 1500000:
-                return 90000 + (income - 1200000) * 0.20
-            elif income <= 5000000:
-                return 150000 + (income - 1500000) * 0.30
-            else:
-                return 1200000 + (income - 5000000) * 0.30
-        
-        tax_new = calculate_tax_new(taxable_income_new)
-        surcharge_new = 0
-        if taxable_income_new > 5000000:
-            surcharge_new = tax_new * 0.10
-        cess_new = (tax_new + surcharge_new) * 0.04
-        total_tax_new = tax_new + surcharge_new + cess_new
-        
-        # TDS and refund/payable calculation - using AI-extracted value
-        tds_paid = tax_data.get('total_tds', 0) if tax_data else 0
-        
-        # Debug logging for TDS extraction
+        # Debug logging
+        tds_paid = tax_comparison['old_regime']['payment_details']['tds_paid']
         logger.info(f"TDS Calculation Debug:")
-        logger.info(f"  tax_data: {tax_data}")
         logger.info(f"  tds_paid extracted: ₹{tds_paid:,.2f}")
-        logger.info(f"  total_tax_old: ₹{total_tax_old:,.2f}")
+        logger.info(f"  old_regime_tax_liability: ₹{old_regime_calc['total_liability']:,.2f}")
+        logger.info(f"  new_regime_tax_liability: ₹{new_regime_calc['total_liability']:,.2f}")
         
-        # If TDS is 0, try to get it from salary data as fallback
-        if tds_paid == 0 and salary_data:
-            salary_tds = salary_data.get('tax_deducted', 0)
-            if salary_tds > 0:
-                tds_paid = salary_tds
-                logger.info(f"  Using salary TDS as fallback: ₹{tds_paid:,.2f}")
+        # Extract for compatibility with existing format
+        refund_old = old_regime_payment['refund_due'] - old_regime_payment['additional_tax_payable']
+        additional_tax_new = new_regime_payment['additional_tax_payable'] - new_regime_payment['refund_due']
         
-        refund_old = tds_paid - total_tax_old
-        additional_tax_new = total_tax_new - tds_paid
-        
-        logger.info(f"  refund_old: ₹{refund_old:,.2f}")
-        logger.info(f"  additional_tax_new: ₹{additional_tax_new:,.2f}")
-        
-        # Create comprehensive final summary matching report structure
+        # Create comprehensive final summary using new calculation structure
         final_summary = {
             "financial_year": "2024-25",
             "assessment_year": "2025-26",
@@ -438,8 +391,8 @@ def _generate_final_summary(session, completed_docs):
             # Detailed Income Calculation
             "income_breakdown": {
                 "salary_income": {
-                    "basic_and_allowances_17_1": basic_and_allowances,  # Section 17(1)
-                    "perquisites_espp_17_2": perquisites_espp,         # Section 17(2) 
+                    "basic_and_allowances_17_1": basic_and_allowances,
+                    "perquisites_espp_17_2": perquisites_espp,
                     "total_salary": total_salary_income
                 },
                 "other_income": {
@@ -451,43 +404,36 @@ def _generate_final_summary(session, completed_docs):
             },
             
             # Deductions & Exemptions (Old Regime)
-            "deductions_old_regime": {
-                "hra_exemption": hra_exemption,
-                "section_80c": section_80c,
-                "section_80ccd_1b": section_80ccd_1b,
-                "standard_deduction": standard_deduction,
-                "professional_tax": professional_tax,
-                "total_deductions": total_deductions_old
-            },
+            "deductions_old_regime": old_regime_deductions,
             
-            # Tax Calculations
+            # Tax Calculations using new utility classes
             "tax_calculation_old_regime": {
-                "taxable_income": taxable_income_old,
-                "tax_on_income": tax_old,
-                "surcharge": 0,
-                "health_education_cess": cess_old,
-                "total_tax_liability": total_tax_old,
-                "tds_paid": tds_paid,
-                "refund_due": refund_old
+                "taxable_income": old_regime_calc['taxable_income'],
+                "tax_on_income": old_regime_calc['base_tax'],
+                "surcharge": old_regime_calc['surcharge'],
+                "health_education_cess": old_regime_calc['cess'],
+                "total_tax_liability": old_regime_calc['total_liability'],
+                "tds_paid": old_regime_payment['tds_paid'],
+                "refund_due": old_regime_payment['refund_due']
             },
             
             "tax_calculation_new_regime": {
-                "taxable_income": taxable_income_new,
-                "tax_on_income": tax_new,
-                "surcharge": surcharge_new,
-                "health_education_cess": cess_new,
-                "total_tax_liability": total_tax_new,
-                "tds_paid": tds_paid,
-                "additional_tax_payable": additional_tax_new
+                "taxable_income": new_regime_calc['taxable_income'],
+                "tax_on_income": new_regime_calc['base_tax'],
+                "surcharge": new_regime_calc['surcharge'],
+                "health_education_cess": new_regime_calc['cess'],
+                "total_tax_liability": new_regime_calc['total_liability'],
+                "tds_paid": new_regime_payment['tds_paid'],
+                "additional_tax_payable": new_regime_payment['additional_tax_payable']
             },
             
             # Regime Comparison & Recommendation
             "regime_comparison": {
-                "old_regime_position": f"Refund of ₹{refund_old:,.2f}" if refund_old > 0 else f"Tax payable: ₹{-refund_old:,.2f}",
-                "new_regime_position": f"Additional tax: ₹{additional_tax_new:,.2f}" if additional_tax_new > 0 else f"Refund of ₹{-additional_tax_new:,.2f}",
-                "savings_by_old_regime": refund_old + additional_tax_new,
-                "recommended_regime": "Old Regime",
-                "recommendation_reason": f"Save ₹{(refund_old + additional_tax_new):,.2f} by choosing Old Regime"
+                "old_regime_position": f"Refund of ₹{old_regime_payment['refund_due']:,.2f}" if old_regime_payment['refund_due'] > 0 else f"Tax payable: ₹{old_regime_payment['additional_tax_payable']:,.2f}",
+                "new_regime_position": f"Additional tax: ₹{new_regime_payment['additional_tax_payable']:,.2f}" if new_regime_payment['additional_tax_payable'] > 0 else f"Refund of ₹{new_regime_payment['refund_due']:,.2f}",
+                "savings_by_old_regime": tax_comparison['comparison']['savings_by_old_regime'],
+                "recommended_regime": tax_comparison['comparison']['recommended_regime'],
+                "recommendation_reason": tax_comparison['comparison']['recommendation_reason']
             },
             
             # Processing metadata
@@ -664,102 +610,50 @@ def process_session_analysis_distributed(self, session_id):
                     elif doc_type == 'mutual_fund_capital_gains':
                         capital_gains['mutual_funds'] = data.get('capital_gains', {}).get('total_gains', 0)
             
-            # Calculate comprehensive tax analysis using AI-extracted values
-            # Section 17(1): Basic salary + allowances  
+            # Extract and aggregate income data from AI analysis (distributed version)
             basic_and_allowances = salary_data.get('total_section_17_1', 0)
-            # Section 17(2): Perquisites (ESPP gains)
             perquisites_espp = salary_data.get('perquisites_espp', 0)
-            # Total salary income = Section 17(1) + Section 17(2)
             total_salary_income = basic_and_allowances + perquisites_espp
-            
-            # Other income from bank interest and dividends
             total_other_income = bank_interest + dividend_income
-            # Gross Total Income = Salary + Other Income
             gross_total_income = total_salary_income + total_other_income
             
-            # Deductions for Old Regime - using AI-extracted values
-            # Calculate HRA exemption dynamically (min of: actual HRA received, 50% of salary, rent paid - 10% of salary)
-            # For now, use 50% of HRA received as approximation
-            hra_exemption = min(hra_received * 0.5, hra_received) if hra_received > 0 else 0
+            # Calculate deductions using utility classes (distributed version)
+            old_regime_deductions = DeductionCalculator.calculate_old_regime_deductions(
+                hra_received=hra_received,
+                basic_salary=basic_and_allowances,  # Use as basic salary approximation
+                elss_investments=investments_80c,
+                employee_pf=employee_pf,
+                nps_additional=nps_80ccd_1b,
+                professional_tax=professional_tax_extracted if professional_tax_extracted > 0 else 0,
+                standard_deduction=50000
+            )
             
-            # Section 80C: ELSS + Employee PF, capped at 1.5L
-            section_80c = min(150000, investments_80c + employee_pf)
+            new_regime_deductions = DeductionCalculator.calculate_new_regime_deductions(
+                standard_deduction=50000  # Using ₹50K for FY 2024-25
+            )
             
-            # Section 80CCD(1B): NPS additional, capped at 50K
-            section_80ccd_1b = min(50000, nps_80ccd_1b)
+            # Use the comprehensive tax calculator for regime comparison (distributed version)
+            tax_comparison = IncomeTaxCalculator.compare_tax_regimes(
+                gross_income=gross_total_income,
+                old_regime_deductions=old_regime_deductions['total_deductions'],
+                new_regime_deductions=new_regime_deductions['total_deductions'],
+                tds_paid=tax_data.get('total_tds', 0) if tax_data else 0
+            )
             
-            # Standard deduction and professional tax
-            standard_deduction = 50000  # Fixed by law
-            professional_tax = professional_tax_extracted if professional_tax_extracted > 0 else 0
+            # Extract calculated values for legacy format compatibility (distributed version)
+            old_regime_calc = tax_comparison['old_regime']['tax_calculation']
+            new_regime_calc = tax_comparison['new_regime']['tax_calculation']
+            old_regime_payment = tax_comparison['old_regime']['payment_details']
+            new_regime_payment = tax_comparison['new_regime']['payment_details']
             
-            total_deductions_old = hra_exemption + section_80c + section_80ccd_1b + standard_deduction + professional_tax
-            
-            # Tax calculations
-            taxable_income_old = gross_total_income - total_deductions_old
-            taxable_income_new = gross_total_income - standard_deduction  # Only standard deduction in new regime
-            
-            # Old Regime Tax Calculation
-            def calculate_tax(income):
-                if income <= 250000:
-                    return 0
-                elif income <= 500000:
-                    return (income - 250000) * 0.05
-                elif income <= 1000000:
-                    return 12500 + (income - 500000) * 0.20
-                else:
-                    return 112500 + (income - 1000000) * 0.30
-            
-            tax_old = calculate_tax(taxable_income_old)
-            cess_old = tax_old * 0.04
-            total_tax_old = tax_old + cess_old
-            
-            # New Regime Tax Calculation (updated rates)
-            def calculate_tax_new(income):
-                if income <= 300000:
-                    return 0
-                elif income <= 600000:
-                    return (income - 300000) * 0.05
-                elif income <= 900000:
-                    return 15000 + (income - 600000) * 0.10
-                elif income <= 1200000:
-                    return 45000 + (income - 900000) * 0.15
-                elif income <= 1500000:
-                    return 90000 + (income - 1200000) * 0.20
-                elif income <= 5000000:
-                    return 150000 + (income - 1500000) * 0.30
-                else:
-                    return 1200000 + (income - 5000000) * 0.30
-            
-            tax_new = calculate_tax_new(taxable_income_new)
-            surcharge_new = 0
-            if taxable_income_new > 5000000:
-                surcharge_new = tax_new * 0.10
-            cess_new = (tax_new + surcharge_new) * 0.04
-            total_tax_new = tax_new + surcharge_new + cess_new
-            
-            # TDS and refund/payable calculation - using AI-extracted value
-            tds_paid = tax_data.get('total_tds', 0) if tax_data else 0
-            
-            # Debug logging for TDS extraction
-            logger.info(f"TDS Calculation Debug (Session Level):")
-            logger.info(f"  tax_data: {tax_data}")
+            # Debug logging (distributed version)
+            tds_paid = tax_comparison['old_regime']['payment_details']['tds_paid']
+            logger.info(f"TDS Calculation Debug (Distributed):")
             logger.info(f"  tds_paid extracted: ₹{tds_paid:,.2f}")
-            logger.info(f"  total_tax_old: ₹{total_tax_old:,.2f}")
+            logger.info(f"  old_regime_tax_liability: ₹{old_regime_calc['total_liability']:,.2f}")
+            logger.info(f"  new_regime_tax_liability: ₹{new_regime_calc['total_liability']:,.2f}")
             
-            # If TDS is 0, try to get it from salary data as fallback
-            if tds_paid == 0 and salary_data:
-                salary_tds = salary_data.get('tax_deducted', 0)
-                if salary_tds > 0:
-                    tds_paid = salary_tds
-                    logger.info(f"  Using salary TDS as fallback: ₹{tds_paid:,.2f}")
-            
-            refund_old = tds_paid - total_tax_old
-            additional_tax_new = total_tax_new - tds_paid
-            
-            logger.info(f"  refund_old: ₹{refund_old:,.2f}")
-            logger.info(f"  additional_tax_new: ₹{additional_tax_new:,.2f}")
-            
-            # Create comprehensive final summary matching report structure
+            # Create comprehensive final summary using new calculation structure (distributed version)
             final_summary = {
                 "financial_year": "2024-25",
                 "assessment_year": "2025-26",
@@ -768,8 +662,8 @@ def process_session_analysis_distributed(self, session_id):
                 # Detailed Income Calculation
                 "income_breakdown": {
                     "salary_income": {
-                        "basic_and_allowances_17_1": basic_and_allowances,  # Section 17(1)
-                        "perquisites_espp_17_2": perquisites_espp,         # Section 17(2) 
+                        "basic_and_allowances_17_1": basic_and_allowances,
+                        "perquisites_espp_17_2": perquisites_espp,
                         "total_salary": total_salary_income
                     },
                     "other_income": {
@@ -781,49 +675,42 @@ def process_session_analysis_distributed(self, session_id):
                 },
                 
                 # Deductions & Exemptions (Old Regime)
-                "deductions_old_regime": {
-                    "hra_exemption": hra_exemption,
-                    "section_80c": section_80c,
-                    "section_80ccd_1b": section_80ccd_1b,
-                    "standard_deduction": standard_deduction,
-                    "professional_tax": professional_tax,
-                    "total_deductions": total_deductions_old
-                },
+                "deductions_old_regime": old_regime_deductions,
                 
-                # Tax Calculations
+                # Tax Calculations using new utility classes
                 "tax_calculation_old_regime": {
-                    "taxable_income": taxable_income_old,
-                    "tax_on_income": tax_old,
-                    "surcharge": 0,
-                    "health_education_cess": cess_old,
-                    "total_tax_liability": total_tax_old,
-                    "tds_paid": tds_paid,
-                    "refund_due": refund_old
+                    "taxable_income": old_regime_calc['taxable_income'],
+                    "tax_on_income": old_regime_calc['base_tax'],
+                    "surcharge": old_regime_calc['surcharge'],
+                    "health_education_cess": old_regime_calc['cess'],
+                    "total_tax_liability": old_regime_calc['total_liability'],
+                    "tds_paid": old_regime_payment['tds_paid'],
+                    "refund_due": old_regime_payment['refund_due']
                 },
                 
                 "tax_calculation_new_regime": {
-                    "taxable_income": taxable_income_new,
-                    "tax_on_income": tax_new,
-                    "surcharge": surcharge_new,
-                    "health_education_cess": cess_new,
-                    "total_tax_liability": total_tax_new,
-                    "tds_paid": tds_paid,
-                    "additional_tax_payable": additional_tax_new
+                    "taxable_income": new_regime_calc['taxable_income'],
+                    "tax_on_income": new_regime_calc['base_tax'],
+                    "surcharge": new_regime_calc['surcharge'],
+                    "health_education_cess": new_regime_calc['cess'],
+                    "total_tax_liability": new_regime_calc['total_liability'],
+                    "tds_paid": new_regime_payment['tds_paid'],
+                    "additional_tax_payable": new_regime_payment['additional_tax_payable']
                 },
                 
                 # Regime Comparison & Recommendation
                 "regime_comparison": {
-                    "old_regime_position": f"Refund of ₹{refund_old:,.2f}" if refund_old > 0 else f"Tax payable: ₹{-refund_old:,.2f}",
-                    "new_regime_position": f"Additional tax: ₹{additional_tax_new:,.2f}" if additional_tax_new > 0 else f"Refund of ₹{-additional_tax_new:,.2f}",
-                    "savings_by_old_regime": refund_old + additional_tax_new,
-                    "recommended_regime": "Old Regime",
-                    "recommendation_reason": f"Save ₹{(refund_old + additional_tax_new):,.2f} by choosing Old Regime"
+                    "old_regime_position": f"Refund of ₹{old_regime_payment['refund_due']:,.2f}" if old_regime_payment['refund_due'] > 0 else f"Tax payable: ₹{old_regime_payment['additional_tax_payable']:,.2f}",
+                    "new_regime_position": f"Additional tax: ₹{new_regime_payment['additional_tax_payable']:,.2f}" if new_regime_payment['additional_tax_payable'] > 0 else f"Refund of ₹{new_regime_payment['refund_due']:,.2f}",
+                    "savings_by_old_regime": tax_comparison['comparison']['savings_by_old_regime'],
+                    "recommended_regime": tax_comparison['comparison']['recommended_regime'],
+                    "recommendation_reason": tax_comparison['comparison']['recommendation_reason']
                 },
                 
                 # Processing metadata
                 "documents_processed": completed_docs.count(),
                 "processing_method": "distributed",
-                "analysis_date": "2025-08-15"
+                "analysis_date": "2025-08-16"
             }
             
             logger.info(f"Creating detailed analysis result with gross_total_income: {gross_total_income}")

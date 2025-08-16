@@ -242,6 +242,32 @@
             margin: 10px 0;
         }
 
+        .privacy-toggle {
+            position: fixed;
+            top: 50%;
+            right: 0;
+            transform: translateY(-50%);
+            background: #2d3748;
+            border: 1px solid var(--primary);
+            border-right: none;
+            border-radius: 25px 0 0 25px;
+            padding: 15px 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            z-index: 1000;
+        }
+
+        .privacy-toggle:hover {
+            background: var(--primary);
+        }
+
+        .privacy-toggle svg {
+            color: white;
+            width: 24px;
+            height: 24px;
+            vertical-align: middle;
+        }
+
         /* Responsive Design */
         @media (max-width: 768px) {
             .regime-comparison,
@@ -287,6 +313,7 @@
     </style>
 </head>
 <body>
+    <div id="privacy-toggle-container"></div>
     <div class="container">
         <!-- Header -->
         <div class="header">
@@ -294,7 +321,10 @@
             <p>AI-Powered Old vs New Regime Comparison • Financial Year 2024-25</p>
         </div>
 
+        
+
         <!-- Savings Summary -->
+        <div id="privacy-toggle-container" style="text-align: right; margin-bottom: -20px;"></div>
         <div class="savings-summary" id="savingsSummary">
             <h2>💰 Your Tax Savings</h2>
             <div>By choosing the <span id="recommendedRegime">Old Regime</span>, you save:</div>
@@ -472,6 +502,65 @@
     </div>
 
     <script>
+        // Privacy Engine Functions
+        let privacyMode = true; // Start with privacy enabled
+
+        function maskAmount(amount, showCurrency = true) {
+            if (!privacyMode) {
+                return (showCurrency ? '₹' : '') + amount.toLocaleString('en-IN');
+            }
+            
+            const amountStr = amount.toString();
+            const length = amountStr.length;
+            
+            // Generate mask based on amount size
+            let mask = '';
+            if (length <= 3) {
+                mask = 'XXX';
+            } else if (length <= 5) {
+                mask = 'XX,XXX';
+            } else if (length <= 7) {
+                mask = 'XX,XX,XXX';
+            } else {
+                mask = 'X,XX,XX,XXX';
+            }
+            
+            return (showCurrency ? '₹' : '') + mask;
+        }
+
+        function togglePrivacy() {
+            privacyMode = !privacyMode;
+            
+            // Update all privacy toggles
+            document.querySelectorAll('.privacy-toggle').forEach(btn => {
+                btn.innerHTML = privacyMode ? '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-eye-off"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-eye"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+                btn.title = privacyMode ? 'Click to show actual amounts' : 'Click to hide amounts';
+            });
+            
+            // Update all financial values
+            document.querySelectorAll('[data-amount]').forEach(element => {
+                const amount = parseFloat(element.dataset.amount);
+                const showCurrency = element.dataset.currency !== 'false';
+                element.innerHTML = maskAmount(amount, showCurrency);
+            });
+            
+            // Update privacy status indicator (if exists)
+            const indicator = document.getElementById('privacyIndicator');
+            if (indicator) {
+                indicator.innerHTML = privacyMode ? 
+                    '🔒 Privacy Mode: ON' : 
+                    '🔓 Privacy Mode: OFF';
+                indicator.style.color = privacyMode ? '#16a34a' : '#d97706';
+            }
+        }
+
+        function createPrivacyToggleButton() {
+            const container = document.getElementById('privacy-toggle-container');
+            if (container) {
+                container.innerHTML = `<button class="privacy-toggle" onclick="togglePrivacy()" title="Toggle privacy mode"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-eye-off"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg></button>`;
+            }
+        }
+
         // Utility functions
         const fmt = (amount) => Math.round(amount || 0).toLocaleString('en-IN');
         const parseAmount = (value) => parseFloat(value) || 0;
@@ -656,20 +745,29 @@
 
         // Update UI with calculated values
         function updateUI(calc) {
+            // Helper function to update element with privacy support
+            function updateElement(id, amount) {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.setAttribute('data-amount', amount);
+                    element.innerHTML = maskAmount(amount, true);
+                }
+            }
+            
             // Income totals
-            document.getElementById('totalSalary').textContent = fmt(calc.totalSalary);
-            document.getElementById('totalOtherIncome').textContent = fmt(calc.totalOtherIncome);
-            document.getElementById('grossTotalIncome').textContent = fmt(calc.grossTotalIncome);
-            document.getElementById('totalDeductions').textContent = fmt(calc.totalDeductionsOld);
+            updateElement('totalSalary', calc.totalSalary);
+            updateElement('totalOtherIncome', calc.totalOtherIncome);
+            updateElement('grossTotalIncome', calc.grossTotalIncome);
+            updateElement('totalDeductions', calc.totalDeductionsOld);
             
             // Regime comparison cards
-            document.getElementById('oldTaxableIncome').textContent = fmt(calc.oldTaxableIncome);
-            document.getElementById('oldTaxLiability').textContent = fmt(calc.oldTotalTax);
-            document.getElementById('oldTdsPaid').textContent = fmt(calc.tdsPaid);
+            updateElement('oldTaxableIncome', calc.oldTaxableIncome);
+            updateElement('oldTaxLiability', calc.oldTotalTax);
+            updateElement('oldTdsPaid', calc.tdsPaid);
             
-            document.getElementById('newTaxableIncome').textContent = fmt(calc.newTaxableIncome);
-            document.getElementById('newTaxLiability').textContent = fmt(calc.newTotalTax);
-            document.getElementById('newTdsPaid').textContent = fmt(calc.tdsPaid);
+            updateElement('newTaxableIncome', calc.newTaxableIncome);
+            updateElement('newTaxLiability', calc.newTotalTax);
+            updateElement('newTdsPaid', calc.tdsPaid);
             
             // Final positions
             const oldCard = document.getElementById('oldRegimeCard');
@@ -680,18 +778,22 @@
             const newBadge = document.getElementById('newRegimeBadge');
             
             if (calc.oldFinalPosition >= 0) {
-                oldFinal.textContent = `Refund: ₹${fmt(calc.oldFinalPosition)}`;
+                oldFinal.setAttribute('data-amount', calc.oldFinalPosition);
+                oldFinal.innerHTML = `Refund: ${maskAmount(calc.oldFinalPosition, true)}`;
                 oldFinal.className = 'final-amount refund';
             } else {
-                oldFinal.textContent = `Tax Payable: ₹${fmt(-calc.oldFinalPosition)}`;
+                oldFinal.setAttribute('data-amount', -calc.oldFinalPosition);
+                oldFinal.innerHTML = `Tax Payable: ${maskAmount(-calc.oldFinalPosition, true)}`;
                 oldFinal.className = 'final-amount tax-payable';
             }
             
             if (calc.newFinalPosition >= 0) {
-                newFinal.textContent = `Refund: ₹${fmt(calc.newFinalPosition)}`;
+                newFinal.setAttribute('data-amount', calc.newFinalPosition);
+                newFinal.innerHTML = `Refund: ${maskAmount(calc.newFinalPosition, true)}`;
                 newFinal.className = 'final-amount refund';
             } else {
-                newFinal.textContent = `Tax Payable: ₹${fmt(-calc.newFinalPosition)}`;
+                newFinal.setAttribute('data-amount', -calc.newFinalPosition);
+                newFinal.innerHTML = `Tax Payable: ${maskAmount(-calc.newFinalPosition, true)}`;
                 newFinal.className = 'final-amount tax-payable';
             }
             
@@ -706,7 +808,7 @@
                 newBadge.className = 'not-recommended-badge';
                 newBadge.textContent = 'Not Recommended';
                 document.getElementById('recommendedRegime').textContent = 'Old Regime';
-                document.getElementById('savingsAmount').textContent = `₹${fmt(savings)}`;
+                updateElement('savingsAmount', savings);
             } else {
                 // New regime is better
                 oldCard.className = 'regime-card not-recommended';
@@ -716,29 +818,49 @@
                 newBadge.className = 'recommended-badge';
                 newBadge.textContent = 'Recommended';
                 document.getElementById('recommendedRegime').textContent = 'New Regime';
-                document.getElementById('savingsAmount').textContent = `₹${fmt(-savings)}`;
+                updateElement('savingsAmount', -savings);
             }
             
-            // Detailed calculation tables
-            document.getElementById('oldGrossDisplay').textContent = `₹${fmt(calc.grossTotalIncome)}`;
-            document.getElementById('oldDeductionsDisplay').textContent = `₹${fmt(calc.totalDeductionsOld)}`;
-            document.getElementById('oldNetTaxable').textContent = `₹${fmt(calc.oldTaxableIncome)}`;
-            document.getElementById('oldIncomeTax').textContent = `₹${fmt(calc.oldIncomeTax)}`;
-            document.getElementById('oldCess').textContent = `₹${fmt(calc.oldCess)}`;
-            document.getElementById('oldTotalTax').textContent = `₹${fmt(calc.oldTotalTax)}`;
-            document.getElementById('oldTdsDisplay').textContent = `₹${fmt(calc.tdsPaid)}`;
-            document.getElementById('oldFinalPosition').textContent = calc.oldFinalPosition >= 0 ? 
-                `Refund: ₹${fmt(calc.oldFinalPosition)}` : `Tax Due: ₹${fmt(-calc.oldFinalPosition)}`;
+            // Detailed calculation tables with privacy support
+            updateElement('oldGrossDisplay', calc.grossTotalIncome);
+            updateElement('oldDeductionsDisplay', calc.totalDeductionsOld);
+            updateElement('oldNetTaxable', calc.oldTaxableIncome);
+            updateElement('oldIncomeTax', calc.oldIncomeTax);
+            updateElement('oldCess', calc.oldCess);
+            updateElement('oldTotalTax', calc.oldTotalTax);
+            updateElement('oldTdsDisplay', calc.tdsPaid);
             
-            document.getElementById('newGrossDisplay').textContent = `₹${fmt(calc.grossTotalIncome)}`;
-            document.getElementById('newNetTaxable').textContent = `₹${fmt(calc.newTaxableIncome)}`;
-            document.getElementById('newIncomeTax').textContent = `₹${fmt(calc.newIncomeTax)}`;
-            document.getElementById('newSurcharge').textContent = `₹${fmt(calc.newSurcharge)}`;
-            document.getElementById('newCess').textContent = `₹${fmt(calc.newCess)}`;
-            document.getElementById('newTotalTax').textContent = `₹${fmt(calc.newTotalTax)}`;
-            document.getElementById('newTdsDisplay').textContent = `₹${fmt(calc.tdsPaid)}`;
-            document.getElementById('newFinalPosition').textContent = calc.newFinalPosition >= 0 ? 
-                `Refund: ₹${fmt(calc.newFinalPosition)}` : `Tax Due: ₹${fmt(-calc.newFinalPosition)}`;
+            // Old regime final position with privacy
+            const oldFinalPosElement = document.getElementById('oldFinalPosition');
+            if (oldFinalPosElement) {
+                if (calc.oldFinalPosition >= 0) {
+                    oldFinalPosElement.setAttribute('data-amount', calc.oldFinalPosition);
+                    oldFinalPosElement.innerHTML = `Refund: ${maskAmount(calc.oldFinalPosition, true)}`;
+                } else {
+                    oldFinalPosElement.setAttribute('data-amount', -calc.oldFinalPosition);
+                    oldFinalPosElement.innerHTML = `Tax Due: ${maskAmount(-calc.oldFinalPosition, true)}`;
+                }
+            }
+            
+            updateElement('newGrossDisplay', calc.grossTotalIncome);
+            updateElement('newNetTaxable', calc.newTaxableIncome);
+            updateElement('newIncomeTax', calc.newIncomeTax);
+            updateElement('newSurcharge', calc.newSurcharge);
+            updateElement('newCess', calc.newCess);
+            updateElement('newTotalTax', calc.newTotalTax);
+            updateElement('newTdsDisplay', calc.tdsPaid);
+            
+            // New regime final position with privacy
+            const newFinalPosElement = document.getElementById('newFinalPosition');
+            if (newFinalPosElement) {
+                if (calc.newFinalPosition >= 0) {
+                    newFinalPosElement.setAttribute('data-amount', calc.newFinalPosition);
+                    newFinalPosElement.innerHTML = `Refund: ${maskAmount(calc.newFinalPosition, true)}`;
+                } else {
+                    newFinalPosElement.setAttribute('data-amount', -calc.newFinalPosition);
+                    newFinalPosElement.innerHTML = `Tax Due: ${maskAmount(-calc.newFinalPosition, true)}`;
+                }
+            }
         }
 
         // Export functionality
@@ -777,6 +899,18 @@
             
             // Load initial data
             loadAnalysisData();
+            
+            // Initialize privacy mode after a short delay to ensure all elements are rendered
+            setTimeout(() => {
+                // Apply initial privacy masking without toggling (keep privacy ON by default)
+                document.querySelectorAll('[data-amount]').forEach(element => {
+                    const amount = parseFloat(element.dataset.amount);
+                    const showCurrency = element.dataset.currency !== 'false';
+                    element.innerHTML = maskAmount(amount, showCurrency);
+                });
+            }, 100);
+
+            createPrivacyToggleButton();
         });
     </script>
 </body>
