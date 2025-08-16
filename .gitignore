@@ -82,3 +82,11 @@ models/
 *.temp
 .temporary/
 
+incometax_project/db.sqlite3
+
+nltk_data/
+
+# Django static files
+incometax_project/static/admin/
+static/admin/
+incometax_project/static/rest_framework/
