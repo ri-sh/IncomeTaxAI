@@ -1,0 +1,3034 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TaxSahaj - Privacy-First Income Tax Filing Assistant</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #0d1117 0%, #161b22 30%, #21262d 60%, #30363d 100%);
+            color: white;
+            overflow-x: hidden;
+            line-height: 1.6;
+        }
+
+        #webgl-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+            position: relative;
+            z-index: 10;
+        }
+
+        /* Header */
+        header {
+            padding: 20px 0;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: rgba(13, 17, 23, 0.1);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(0, 255, 127, 0.3);
+            z-index: 100;
+            transition: all 0.3s ease;
+        }
+
+        nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 2rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #00ff7f 0%, #00e676 50%, #00c853 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: 0 0 30px rgba(0, 255, 127, 0.5);
+        }
+
+        .nav-links {
+            display: flex;
+            list-style: none;
+            gap: 2rem;
+        }
+
+        .nav-links a {
+            color: #e2e8f0;
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .nav-links a:hover {
+            color: #00ff7f;
+        }
+
+        .nav-links a::after {
+            content: '';
+            position: absolute;
+            bottom: -5px;
+            left: 0;
+            width: 0;
+            height: 2px;
+            background: linear-gradient(135deg, #00ff7f, #00e676);
+            transition: width 0.3s ease;
+        }
+
+        .nav-links a:hover::after {
+            width: 100%;
+        }
+
+        /* Hero Section */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            position: relative;
+            padding-top: 100px;
+        }
+
+        .hero-content {
+            max-width: 900px;
+            animation: fadeInUp 1s ease-out;
+        }
+
+        .privacy-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(0, 255, 127, 0.1);
+            border: 1px solid rgba(0, 255, 127, 0.3);
+            padding: 0.5rem 1rem;
+            border-radius: 25px;
+            margin-bottom: 2rem;
+            backdrop-filter: blur(10px);
+            animation: pulse 3s infinite;
+        }
+
+        .privacy-icon {
+            font-size: 1.2rem;
+            color: #00ff7f;
+        }
+
+        .rupee-symbol {
+            font-size: 8rem;
+            background: linear-gradient(135deg, #00ff7f 0%, #00e676 50%, #00c853 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 1rem;
+            text-shadow: 0 0 40px rgba(0, 255, 127, 0.8);
+            animation: stackingPulse 3s infinite;
+            filter: drop-shadow(0 0 20px rgba(0, 255, 127, 0.6));
+        }
+
+        .hero h1 {
+            font-size: clamp(2.5rem, 7vw, 5rem);
+            font-weight: 900;
+            margin-bottom: 1rem;
+            background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e0 50%, #a0aec0 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            line-height: 1.1;
+            letter-spacing: -0.02em;
+            text-shadow: 0 0 40px rgba(226, 232, 240, 0.3);
+        }
+
+        .hero .savings-highlight {
+            font-size: 2rem;
+            background: linear-gradient(135deg, #00ff7f 0%, #00e676 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-weight: 700;
+            margin-bottom: 2rem;
+            text-shadow: 0 0 25px rgba(0, 255, 127, 0.6);
+            animation: glow 3s ease-in-out infinite alternate;
+            filter: drop-shadow(0 0 15px rgba(0, 255, 127, 0.4));
+        }
+
+        .hero p {
+            font-size: 1.3rem;
+            margin-bottom: 3rem;
+            color: #a0aec0;
+            font-weight: 300;
+        }
+
+        .cta-buttons {
+            display: flex;
+            gap: 1.5rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 1rem 2.5rem;
+            border: none;
+            border-radius: 50px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #00ff7f 0%, #00e676 100%);
+            color: #0d1117;
+            box-shadow: 0 10px 30px rgba(0, 255, 127, 0.4);
+            border: 1px solid rgba(0, 255, 127, 0.3);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 15px 40px rgba(0, 255, 127, 0.6);
+            background: linear-gradient(135deg, #00e676 0%, #00c853 100%);
+        }
+
+        .btn-secondary {
+            background: rgba(0, 255, 127, 0.1);
+            color: #00ff7f;
+            border: 2px solid #00ff7f;
+            backdrop-filter: blur(10px);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(0, 255, 127, 0.2);
+            transform: translateY(-3px);
+            box-shadow: 0 15px 30px rgba(0, 255, 127, 0.3);
+        }
+
+        /* Privacy First Section */
+        .privacy-section {
+            padding: 6rem 0;
+            background: rgba(26, 35, 50, 0.4);
+            backdrop-filter: blur(20px);
+            border-top: 1px solid rgba(72, 187, 120, 0.2);
+            border-bottom: 1px solid rgba(72, 187, 120, 0.2);
+        }
+
+        .privacy-hero {
+            text-align: center;
+            margin-bottom: 4rem;
+        }
+
+        .privacy-hero h2 {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .privacy-features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-top: 3rem;
+        }
+
+        .privacy-card {
+            background: rgba(45, 55, 72, 0.3);
+            padding: 2rem;
+            border-radius: 15px;
+            border: 1px solid rgba(72, 187, 120, 0.3);
+            backdrop-filter: blur(15px);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .privacy-card:hover {
+            transform: translateY(-5px);
+            background: rgba(72, 187, 120, 0.1);
+            border-color: rgba(72, 187, 120, 0.5);
+        }
+
+        .privacy-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(135deg, #48bb78, #38a169);
+            transform: scaleX(0);
+            transition: transform 0.3s ease;
+        }
+
+        .privacy-card:hover::before {
+            transform: scaleX(1);
+        }
+
+        .privacy-card .icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            color: #48bb78;
+        }
+
+        /* Document Upload Section */
+        .upload-section {
+            padding: 6rem 0;
+            background: rgba(45, 55, 72, 0.2);
+        }
+
+        .upload-container {
+            max-width: 800px;
+            margin: 0 auto;
+            text-align: center;
+        }
+
+        .upload-container h2 {
+            font-size: 3rem;
+            margin-bottom: 2rem;
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .upload-zone {
+            border: 3px dashed rgba(72, 187, 120, 0.5);
+            border-radius: 20px;
+            padding: 4rem 2rem;
+            background: rgba(72, 187, 120, 0.05);
+            transition: all 0.3s ease;
+            margin: 2rem 0;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .upload-zone:hover {
+            border-color: #48bb78;
+            background: rgba(72, 187, 120, 0.1);
+            transform: translateY(-5px);
+        }
+
+        .upload-zone::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(45deg, transparent, rgba(72, 187, 120, 0.1), transparent);
+            transform: rotate(45deg);
+            transition: all 0.6s ease;
+            opacity: 0;
+        }
+
+        .upload-zone:hover::before {
+            opacity: 1;
+            transform: rotate(45deg) translate(50%, 50%);
+        }
+
+        .upload-icon {
+            font-size: 4rem;
+            color: #48bb78;
+            margin-bottom: 1rem;
+            animation: bounce 2s infinite;
+        }
+
+        .file-types {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin-top: 2rem;
+            flex-wrap: wrap;
+        }
+
+        .file-type {
+            background: rgba(72, 187, 120, 0.1);
+            padding: 0.5rem 1rem;
+            border-radius: 25px;
+            border: 1px solid rgba(72, 187, 120, 0.3);
+            font-size: 0.9rem;
+            color: #48bb78;
+        }
+
+        /* AI Processing Indicator */
+        .ai-processing {
+            background: rgba(45, 55, 72, 0.3);
+            border: 1px solid rgba(72, 187, 120, 0.3);
+            border-radius: 15px;
+            padding: 2rem;
+            margin: 2rem 0;
+            display: none;
+            text-align: center;
+        }
+
+        .processing-steps {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 2rem;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .step {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+            opacity: 0.3;
+            transition: all 0.3s ease;
+        }
+
+        .step.active {
+            opacity: 1;
+        }
+
+        .step-icon {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: rgba(72, 187, 120, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            color: #48bb78;
+            border: 2px solid rgba(72, 187, 120, 0.3);
+        }
+
+        .step.active .step-icon {
+            background: rgba(72, 187, 120, 0.3);
+            border-color: #48bb78;
+            animation: pulse 2s infinite;
+        }
+
+        /* Step-by-Step Guide */
+        .guide-section {
+            padding: 6rem 0;
+            background: rgba(26, 35, 50, 0.6);
+        }
+
+        .guide-container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .guide-container h2 {
+            text-align: center;
+            font-size: 3rem;
+            margin-bottom: 3rem;
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .guide-steps {
+            display: grid;
+            gap: 2rem;
+        }
+
+        .guide-step {
+            display: flex;
+            gap: 2rem;
+            background: rgba(45, 55, 72, 0.3);
+            padding: 2rem;
+            border-radius: 15px;
+            border: 1px solid rgba(72, 187, 120, 0.2);
+            backdrop-filter: blur(15px);
+            transition: all 0.3s ease;
+        }
+
+        .guide-step:hover {
+            transform: translateX(10px);
+            border-color: rgba(72, 187, 120, 0.5);
+        }
+
+        .step-number {
+            min-width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #48bb78, #38a169);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: white;
+        }
+
+        .step-content h3 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            color: #48bb78;
+        }
+
+        .step-content p {
+            color: #a0aec0;
+            line-height: 1.6;
+        }
+
+        /* Money Saving Calculator */
+        .calculator-section {
+            padding: 6rem 0;
+            background: rgba(26, 35, 50, 0.4);
+            backdrop-filter: blur(20px);
+            border-top: 1px solid rgba(72, 187, 120, 0.2);
+            border-bottom: 1px solid rgba(72, 187, 120, 0.2);
+        }
+
+        .calculator {
+            max-width: 600px;
+            margin: 0 auto;
+            background: rgba(45, 55, 72, 0.3);
+            padding: 3rem;
+            border-radius: 20px;
+            border: 1px solid rgba(72, 187, 120, 0.3);
+            backdrop-filter: blur(15px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+        }
+
+        .calculator h2 {
+            text-align: center;
+            font-size: 2.5rem;
+            margin-bottom: 2rem;
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .input-group {
+            margin-bottom: 2rem;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #48bb78;
+            font-weight: 600;
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 1rem;
+            border: 2px solid rgba(72, 187, 120, 0.3);
+            border-radius: 10px;
+            background: rgba(45, 55, 72, 0.5);
+            color: white;
+            font-size: 1.1rem;
+            transition: all 0.3s ease;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: #48bb78;
+            box-shadow: 0 0 20px rgba(72, 187, 120, 0.3);
+            background: rgba(45, 55, 72, 0.7);
+        }
+
+        .savings-display {
+            text-align: center;
+            padding: 2rem;
+            background: linear-gradient(135deg, rgba(72, 187, 120, 0.15), rgba(56, 161, 105, 0.1));
+            border-radius: 15px;
+            border: 2px solid rgba(72, 187, 120, 0.4);
+            margin-top: 2rem;
+            box-shadow: 0 10px 30px rgba(72, 187, 120, 0.2);
+        }
+
+        .savings-amount {
+            font-size: 3rem;
+            font-weight: 900;
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: 0 0 20px rgba(72, 187, 120, 0.5);
+            margin-bottom: 0.5rem;
+        }
+
+        /* Features with Money Icons */
+        .features {
+            padding: 8rem 0;
+        }
+
+        .features h2 {
+            text-align: center;
+            font-size: 3rem;
+            margin-bottom: 4rem;
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 3rem;
+            margin-top: 4rem;
+        }
+
+        .feature-card {
+            background: rgba(45, 55, 72, 0.2);
+            padding: 3rem 2rem;
+            border-radius: 20px;
+            border: 1px solid rgba(72, 187, 120, 0.2);
+            backdrop-filter: blur(15px);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-10px);
+            background: rgba(72, 187, 120, 0.1);
+            border-color: rgba(72, 187, 120, 0.5);
+            box-shadow: 0 20px 40px rgba(72, 187, 120, 0.2);
+        }
+
+        .feature-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(135deg, #48bb78, #38a169);
+            transform: scaleX(0);
+            transition: transform 0.3s ease;
+        }
+
+        .feature-card:hover::before {
+            transform: scaleX(1);
+        }
+
+        .feature-icon {
+            font-size: 4rem;
+            margin-bottom: 1.5rem;
+            color: #48bb78;
+            text-shadow: 0 0 20px rgba(72, 187, 120, 0.3);
+        }
+
+        .feature-card h3 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            color: #e2e8f0;
+        }
+
+        .feature-card p {
+            color: #a0aec0;
+            line-height: 1.6;
+        }
+
+        .savings-tag {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: linear-gradient(135deg, #48bb78, #38a169);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-weight: 700;
+            font-size: 0.9rem;
+            box-shadow: 0 5px 15px rgba(72, 187, 120, 0.3);
+        }
+
+        /* Stats Section */
+        .stats {
+            padding: 6rem 0;
+            background: rgba(26, 35, 50, 0.6);
+            text-align: center;
+            backdrop-filter: blur(20px);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 3rem;
+            margin-top: 3rem;
+        }
+
+        .stat-item {
+            padding: 2rem;
+            background: rgba(72, 187, 120, 0.1);
+            border-radius: 15px;
+            border: 1px solid rgba(72, 187, 120, 0.3);
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+
+        .stat-item:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 30px rgba(72, 187, 120, 0.2);
+        }
+
+        .stat-number {
+            font-size: 3rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-label {
+            font-size: 1.1rem;
+            color: #a0aec0;
+        }
+
+        /* Footer */
+        footer {
+            padding: 4rem 0 2rem;
+            background: rgba(13, 17, 23, 0.95);
+            border-top: 1px solid rgba(0, 255, 127, 0.3);
+            text-align: center;
+        }
+
+        /* Scroll Progress Bar */
+        .scroll-progress {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 0%;
+            height: 3px;
+            background: linear-gradient(90deg, #00ff7f, #00e676);
+            z-index: 1000;
+            transition: width 0.1s ease;
+            box-shadow: 0 0 10px rgba(0, 255, 127, 0.5);
+        }
+
+        /* Animations */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(50px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes stackingPulse {
+            0%, 100% {
+                transform: scale(1) rotateY(0deg);
+            }
+            50% {
+                transform: scale(1.05) rotateY(15deg);
+            }
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+            50% {
+                transform: scale(1.1);
+                opacity: 0.7;
+            }
+        }
+
+        @keyframes glow {
+            0% {
+                text-shadow: 0 0 25px rgba(0, 255, 127, 0.6);
+            }
+            100% {
+                text-shadow: 0 0 35px rgba(0, 255, 127, 0.9), 0 0 45px rgba(0, 255, 127, 0.7);
+            }
+        }
+
+        @keyframes bounce {
+            0%, 20%, 50%, 80%, 100% {
+                transform: translateY(0);
+            }
+            40% {
+                transform: translateY(-10px);
+            }
+            60% {
+                transform: translateY(-5px);
+            }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .nav-links {
+                display: none;
+            }
+            
+            .hero h1 {
+                font-size: 2.5rem;
+            }
+            
+            .rupee-symbol {
+                font-size: 5rem;
+            }
+            
+            .cta-buttons {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .features-grid, .privacy-features {
+                grid-template-columns: 1fr;
+                gap: 2rem;
+            }
+
+            .calculator {
+                padding: 2rem 1rem;
+            }
+
+            .processing-steps {
+                justify-content: center;
+            }
+
+            .guide-step {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+
+        /* WebGL Scene Overlays */
+        .scene-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle at center, transparent 0%, rgba(13, 17, 23, 0.4) 70%);
+            pointer-events: none;
+            z-index: 2;
+        }
+    </style>
+</head>
+<body>
+    <div class="scroll-progress"></div>
+    <canvas id="webgl-canvas"></canvas>
+    <div class="scene-overlay"></div>
+    
+    <header>
+        <nav class="container">
+            <div class="logo">TaxSahaj</div>
+            <ul class="nav-links">
+                <li><a href="#home">Home</a></li>
+                <li><a href="#upload">Upload</a></li>
+                <li><a href="#calculator">Calculator</a></li>
+                <li><a href="#guide">Guide</a></li>
+                <li><a href="#privacy">Privacy</a></li>
+                <li><a href="#contact">Contact</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <main>
+        <section class="hero" id="home">
+            <div class="container">
+                <div class="hero-content">
+                    <div class="privacy-badge">
+                        <span class="privacy-icon">🔒</span>
+                        <span>100% Privacy Protected • Data Never Leaves Your Device</span>
+                    </div>
+                    <div class="rupee-symbol">₹</div>
+                    <h1>AI-Powered Tax Filing</h1>
+                    <div class="savings-highlight">Up to ₹1,50,000 Tax Savings!</div>
+                    <p>Upload your documents, let our local AI extract data, and get step-by-step guidance for maximum savings while keeping your data completely private</p>
+                    <div class="cta-buttons">
+                        <a href="#upload" class="btn btn-primary">Start Filing Now</a>
+                        <a href="#privacy" class="btn btn-secondary">How We Protect You</a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="privacy-section" id="privacy">
+            <div class="container">
+                <div class="privacy-hero">
+                    <h2>🛡️ Privacy-First Technology</h2>
+                    <p style="font-size: 1.2rem; color: #a0aec0; max-width: 800px; margin: 0 auto;">Your financial data is precious. That's why we process everything locally on your device using advanced AI - no servers, no data breaches, no worries.</p>
+                </div>
+                <div class="privacy-features">
+                    <div class="privacy-card">
+                        <div class="icon">🔒</div>
+                        <h3>Local AI Processing</h3>
+                        <p>All document analysis happens on your device. Our AI reads Form 16, bank statements, and investment proofs without sending data anywhere.</p>
+                    </div>
+                    <div class="privacy-card">
+                        <div class="icon">🛡️</div>
+                        <h3>AES-256 Encryption</h3>
+                        <p>All temporary files are encrypted with military-grade AES-256 encryption. Even if someone accessed your device, your tax data remains unreadable.</p>
+                    </div>
+                    <div class="privacy-card">
+                        <div class="icon">🚫</div>
+                        <h3>Zero Data Collection</h3>
+                        <p>We don't collect, store, or transmit your personal information. No user accounts, no data servers, no privacy concerns.</p>
+                    </div>
+                    <div class="privacy-card">
+                        <div class="icon">⚡</div>
+                        <h3>Instant Local Results</h3>
+                        <p>Get tax calculations and recommendations instantly without internet delays. Everything runs locally for maximum speed and privacy.</p>
+                    </div>
+                    <div class="privacy-card">
+                        <div class="icon">🗑️</div>
+                        <h3>Auto-Delete After Use</h3>
+                        <p>All processed data is automatically wiped from your device after filing. No traces left behind for complete peace of mind.</p>
+                    </div>
+                    <div class="privacy-card">
+                        <div class="icon">🔍</div>
+                        <h3>Open Source Transparency</h3>
+                        <p>Our code is open source and auditable. See exactly how we protect your privacy - no hidden backdoors or data collection.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="upload-section" id="upload">
+            <div class="container">
+                <div class="upload-container">
+                    <h2>📄 Upload Your Tax Documents</h2>
+                    <p style="font-size: 1.2rem; color: #a0aec0; margin-bottom: 3rem;">
+                        <strong>📂 Select Multiple Documents:</strong> Drag and drop or browse to select all your tax documents at once. Our local AI will analyze them together for comprehensive tax optimization.
+                    </p>
+                    
+                    <div class="upload-zone" ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
+                        <div onclick="triggerFileUpload()" style="cursor: pointer; padding: 1rem;">
+                            <div class="upload-icon">📁</div>
+                            <h3>Drop Multiple Documents Here</h3>
+                            <p><strong>📂 Select Multiple Files</strong> - Form 16, Bank Statements, Investment Proofs, etc.</p>
+                            <p style="font-size: 0.9rem; color: #48bb78; margin-top: 0.5rem;">✨ Tip: Hold Ctrl/Cmd to select multiple files at once</p>
+                            <button onclick="event.stopPropagation(); triggerFileUpload()" style="
+                                background: rgba(72, 187, 120, 0.2);
+                                border: 2px solid #48bb78;
+                                color: #48bb78;
+                                padding: 0.75rem 1.5rem;
+                                border-radius: 10px;
+                                cursor: pointer;
+                                font-weight: 600;
+                                margin-top: 1rem;
+                                transition: all 0.3s ease;
+                            " onmouseover="this.style.background='rgba(72, 187, 120, 0.3)'" 
+                               onmouseout="this.style.background='rgba(72, 187, 120, 0.2)'">
+                                📁 Browse Files
+                            </button>
+                        </div>
+                        <input type="file" id="fileInput" style="display: none;" multiple accept=".pdf,.xlsx,.xls,.csv,.jpg,.jpeg,.png,.doc,.docx">
+                        
+                        <!-- File Preview Area -->
+                        <div id="filePreview" style="display: none; margin-top: 2rem; text-align: left;">
+                            <h4 style="color: #48bb78; margin-bottom: 1rem;">📋 Selected Files:</h4>
+                            <div id="fileList" style="max-height: 200px; overflow-y: auto;"></div>
+                            <div style="margin-top: 1rem; text-align: center;">
+                                <button onclick="clearFiles()" style="background: rgba(255,99,99,0.2); border: 1px solid #ff6363; color: #ff6363; padding: 0.5rem 1rem; border-radius: 5px; cursor: pointer;">🗑️ Clear All</button>
+                            </div>
+                        </div>
+                        
+                        <!-- Ready to Analyze Section -->
+                        <div id="readyToAnalyze" style="display: none; margin-top: 2rem;">
+                            <div style="
+                                background: linear-gradient(135deg, rgba(72, 187, 120, 0.15), rgba(56, 161, 105, 0.1));
+                                border: 2px solid rgba(72, 187, 120, 0.4);
+                                border-radius: 15px;
+                                padding: 2rem;
+                                text-align: center;
+                                box-shadow: 0 10px 30px rgba(72, 187, 120, 0.2);
+                            ">
+                                <h3 style="color: #48bb78; margin-bottom: 1rem; font-size: 1.5rem;">🚀 Ready to Analyze</h3>
+                                <p style="color: #a0aec0; margin-bottom: 1.5rem;">Click below to start AI analysis of your tax documents</p>
+                                <button id="processButton" type="button" style="
+                                    background: linear-gradient(135deg, #48bb78, #38a169);
+                                    border: none;
+                                    color: white;
+                                    padding: 1rem 2rem;
+                                    border-radius: 10px;
+                                    cursor: pointer;
+                                    font-weight: 600;
+                                    font-size: 1.1rem;
+                                    box-shadow: 0 10px 30px rgba(72, 187, 120, 0.3);
+                                    transition: all 0.3s ease;
+                                    position: relative;
+                                    z-index: 1000;
+                                    pointer-events: auto;
+                                ">
+                                    📊 Process Documents & View Analysis
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="file-types">
+                        <div class="file-type">📋 Form 16</div>
+                        <div class="file-type">🏦 Bank Statements</div>
+                        <div class="file-type">💰 Investment Proofs</div>
+                        <div class="file-type">🏥 Medical Insurance</div>
+                        <div class="file-type">🏠 Home Loan Certificates</div>
+                        <div class="file-type">📊 Mutual Fund Statements</div>
+                    </div>
+
+                    <div class="ai-processing" id="processingIndicator">
+                        <h3>🤖 AI Processing Your Documents Locally...</h3>
+                        <p>All processing happens on your device - your data never leaves your computer</p>
+                        <div class="processing-steps">
+                            <div class="step" id="step1">
+                                <div class="step-icon">📖</div>
+                                <span>Reading Documents</span>
+                            </div>
+                            <div class="step" id="step2">
+                                <div class="step-icon">🔍</div>
+                                <span>Extracting Data</span>
+                            </div>
+                            <div class="step" id="step3">
+                                <div class="step-icon">⚡</div>
+                                <span>Analyzing Deductions</span>
+                            </div>
+                            <div class="step" id="step4">
+                                <div class="step-icon">💰</div>
+                                <span>Calculating Savings</span>
+                            </div>
+                            <div class="step" id="step5">
+                                <div class="step-icon">✅</div>
+                                <span>Ready to File</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="guide-section" id="guide">
+            <div class="container">
+                <div class="guide-container">
+                    <h2>📋 Step-by-Step Filing Guide</h2>
+                    <p style="text-align: center; font-size: 1.2rem; color: #a0aec0; margin-bottom: 3rem;">After processing your documents, we'll guide you through each step of the official Income Tax portal</p>
+                    
+                    <div class="guide-steps">
+                        <div class="guide-step">
+                            <div class="step-number">1</div>
+                            <div class="step-content">
+                                <h3>🔐 Login to Income Tax Portal</h3>
+                                <p>We'll show you exactly where to login and which section to navigate to. No confusion, just clear directions to the right forms.</p>
+                            </div>
+                        </div>
+                        
+                        <div class="guide-step">
+                            <div class="step-number">2</div>
+                            <div class="step-content">
+                                <h3>📊 Pre-filled Data Review</h3>
+                                <p>Compare the portal's pre-filled data with our extracted information. We'll highlight any discrepancies and suggest corrections.</p>
+                            </div>
+                        </div>
+                        
+                        <div class="guide-step">
+                            <div class="step-number">3</div>
+                            <div class="step-content">
+                                <h3>💰 Claim All Deductions</h3>
+                                <p>Step-by-step guidance for claiming 80C, 80D, HRA, home loan interest, and all other eligible deductions with exact amounts.</p>
+                            </div>
+                        </div>
+                        
+                        <div class="guide-step">
+                            <div class="step-number">4</div>
+                            <div class="step-content">
+                                <h3>⚖️ Regime Comparison</h3>
+                                <p>We'll show you the tax calculation for both old and new regimes and recommend the one that saves you the most money.</p>
+                            </div>
+                        </div>
+                        
+                        <div class="guide-step">
+                            <div class="step-number">5</div>
+                            <div class="step-content">
+                                <h3>✅ Verify & Submit</h3>
+                                <p>Final review of all entries with our smart checker, then guidance for e-verification to complete your filing securely.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="calculator-section" id="calculator">
+            <div class="container">
+                <div class="calculator">
+                    <h2>💰 Quick Tax Savings Calculator</h2>
+                    <div class="input-group">
+                        <label for="income">Annual Income (₹)</label>
+                        <input type="number" id="income" placeholder="e.g., 800000" min="0">
+                    </div>
+                    <div class="input-group">
+                        <label for="investments">80C Investments (₹)</label>
+                        <input type="number" id="investments" placeholder="e.g., 150000" min="0" max="150000">
+                    </div>
+                    <div class="input-group">
+                        <label for="medical">Medical Insurance 80D (₹)</label>
+                        <input type="number" id="medical" placeholder="e.g., 25000" min="0" max="100000">
+                    </div>
+                    <div class="savings-display">
+                        <div class="savings-amount" id="savingsAmount">₹0</div>
+                        <div>Potential Tax Savings</div>
+                        <p style="font-size: 0.9rem; color: #a0aec0; margin-top: 1rem;">Upload your documents for precise calculations with all eligible deductions</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="features" id="services">
+            <div class="container">
+                <h2>💸 How We Maximize Your Savings</h2>
+                <div class="features-grid">
+                    <div class="feature-card">
+                        <div class="savings-tag">Save ₹50K+</div>
+                        <div class="feature-icon">🎯</div>
+                        <h3>AI Deduction Finder</h3>
+                        <p>Our local AI scans 100+ deduction categories including 80C, 80D, 24B, HRA and finds every rupee you can save legally from your uploaded documents.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="savings-tag">Save ₹25K+</div>
+                        <div class="feature-icon">📊</div>
+                        <h3>Smart Regime Comparison</h3>
+                        <p>Automatically compare old vs new tax regime based on your actual financial data and recommend the option that maximizes your savings.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="savings-tag">Save ₹15K+</div>
+                        <div class="feature-icon">⚡</div>
+                        <h3>Instant Document Processing</h3>
+                        <p>Upload Form 16, bank statements, investment proofs - our AI extracts all data locally in seconds without compromising your privacy.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="savings-tag">Save ₹30K+</div>
+                        <div class="feature-icon">🏠</div>
+                        <h3>Home Loan Optimization</h3>
+                        <p>Automatically calculate Section 24B interest deductions and principal repayment benefits under 80C from your loan statements.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="savings-tag">Save ₹10K+</div>
+                        <div class="feature-icon">💼</div>
+                        <h3>Professional Expenses</h3>
+                        <p>Track and claim all work-from-home expenses, travel allowances, and professional development costs with receipt analysis.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="savings-tag">Save ₹20K+</div>
+                        <div class="feature-icon">🩺</div>
+                        <h3>Medical Deductions</h3>
+                        <p>Maximize health insurance premiums, medical expenses for senior citizens, and preventive health checkup deductions automatically.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="stats">
+            <div class="container">
+                <h2>💯 Trusted by Smart Taxpayers</h2>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-number">₹2000Cr+</div>
+                        <div class="stat-label">Total Money Saved</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-number">₹45K</div>
+                        <div class="stat-label">Average Savings Per User</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-number">100%</div>
+                        <div class="stat-label">Data Privacy Protected</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-number">5M+</div>
+                        <div class="stat-label">Happy Savers</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2025 TaxSahaj. Your Privacy, Your Savings, Your Control. | Made with 💚 for Smart Indian Taxpayers</p>
+            <p style="font-size: 0.9rem; color: #a0aec0; margin-top: 1rem;">🔒 Zero Data Collection • 🛡️ Local Processing • 🗑️ Auto-Delete After Use</p>
+        </div>
+    </footer>
+
+    <!-- CSRF Token for Django -->
+    <script>
+        // Set CSRF token
+        function getCSRFToken() {
+            const token = document.cookie.split(';')
+                .find(row => row.startsWith('csrftoken='))
+                ?.split('=')[1];
+            return token;
+        }
+        
+        // If CSRF token is not available in cookies, try meta tag
+        if (!getCSRFToken()) {
+            const meta = document.createElement('meta');
+            meta.name = 'csrf-token';
+            meta.content = '{{ csrf_token }}';
+            document.head.appendChild(meta);
+        }
+    </script>
+    
+    <script>
+        // Enhanced WebGL with Stacking Money Animation
+        let scene, camera, renderer, stackedNotes = [], floatingCoins = [], 
+            mouse = { x: 0, y: 0 }, scrollY = 0, animationTime = 0, maxScrollHeight = 0;
+
+        function initWebGL() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('webgl-canvas'), alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+
+            // Calculate max scroll height
+            maxScrollHeight = document.documentElement.scrollHeight - window.innerHeight;
+
+            // Create stacking money notes
+            createStackingNotes();
+            createFloatingElements();
+            createParticleSystem();
+
+            camera.position.set(0, 10, 30);
+            camera.lookAt(0, 0, 0);
+
+            // Mouse movement tracking
+            document.addEventListener('mousemove', (event) => {
+                mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            });
+
+            // Scroll tracking
+            window.addEventListener('scroll', () => {
+                scrollY = window.pageYOffset;
+                updateScrollProgress();
+                updateStackingAnimation();
+            });
+
+            animate();
+        }
+
+        function createStackingNotes() {
+            const noteGeometry = new THREE.PlaneGeometry(2, 1);
+            const basePosition = new THREE.Vector3(-15, -10, 0);
+            
+            // Create 50 notes for stacking effect
+            for (let i = 0; i < 50; i++) {
+                const hue = 0.25 + (Math.random() * 0.1); // Green variations
+                const noteMaterial = new THREE.MeshBasicMaterial({
+                    color: new THREE.Color().setHSL(hue, 0.8, 0.6),
+                    transparent: true,
+                    opacity: 0.8,
+                    side: THREE.DoubleSide
+                });
+
+                const note = new THREE.Mesh(noteGeometry, noteMaterial);
+                
+                // Position notes in a stack
+                note.position.copy(basePosition);
+                note.position.y += i * 0.05; // Stack height
+                note.position.x += (Math.random() - 0.5) * 0.3; // Small random offset
+                note.position.z += (Math.random() - 0.5) * 0.3;
+                
+                // Slight random rotation for realism
+                note.rotation.set(
+                    (Math.random() - 0.5) * 0.1,
+                    (Math.random() - 0.5) * 0.2,
+                    (Math.random() - 0.5) * 0.1
+                );
+
+                note.userData = {
+                    originalY: basePosition.y + i * 0.05,
+                    stackIndex: i,
+                    targetY: basePosition.y + i * 0.05,
+                    animationDelay: i * 50, // Staggered animation
+                    isVisible: false,
+                    finalRotation: note.rotation.clone()
+                };
+
+                // Start below viewport
+                note.position.y = basePosition.y - 20;
+                note.visible = false;
+
+                scene.add(note);
+                stackedNotes.push(note);
+            }
+        }
+
+        function createFloatingElements() {
+            // Floating coins
+            const coinGeometry = new THREE.CylinderGeometry(0.5, 0.5, 0.1, 12);
+            
+            for (let i = 0; i < 30; i++) {
+                const coinMaterial = new THREE.MeshBasicMaterial({
+                    color: new THREE.Color().setHSL(0.15, 0.9, 0.7),
+                    transparent: true,
+                    opacity: 0.7
+                });
+
+                const coin = new THREE.Mesh(coinGeometry, coinMaterial);
+                coin.position.set(
+                    (Math.random() - 0.5) * 60,
+                    Math.random() * 40 - 20,
+                    (Math.random() - 0.5) * 40
+                );
+                
+                coin.userData = {
+                    velocity: new THREE.Vector3(
+                        (Math.random() - 0.5) * 0.02,
+                        Math.random() * 0.01 + 0.005,
+                        (Math.random() - 0.5) * 0.02
+                    ),
+                    rotationSpeed: new THREE.Vector3(
+                        Math.random() * 0.03,
+                        Math.random() * 0.03,
+                        Math.random() * 0.03
+                    ),
+                    floatAmplitude: Math.random() * 2 + 1,
+                    floatFrequency: Math.random() * 0.02 + 0.01
+                };
+
+                scene.add(coin);
+                floatingCoins.push(coin);
+            }
+
+            // Floating rupee symbols
+            createCurrencySymbols();
+        }
+
+        function createCurrencySymbols() {
+            const symbolGeometry = new THREE.PlaneGeometry(1.5, 1.5);
+            
+            for (let i = 0; i < 40; i++) {
+                const symbolMaterial = new THREE.MeshBasicMaterial({
+                    color: new THREE.Color().setHSL(0.3, 0.7, 0.6),
+                    transparent: true,
+                    opacity: 0.5
+                });
+
+                const symbol = new THREE.Mesh(symbolGeometry, symbolMaterial);
+                symbol.position.set(
+                    (Math.random() - 0.5) * 80,
+                    Math.random() * 60 - 30,
+                    (Math.random() - 0.5) * 60
+                );
+                
+                symbol.userData = {
+                    velocity: new THREE.Vector3(
+                        (Math.random() - 0.5) * 0.01,
+                        Math.random() * 0.008 + 0.003,
+                        (Math.random() - 0.5) * 0.01
+                    ),
+                    rotationSpeed: Math.random() * 0.02 + 0.005,
+                    floatAmplitude: Math.random() * 3 + 2,
+                    floatFrequency: Math.random() * 0.015 + 0.005
+                };
+
+                scene.add(symbol);
+            }
+        }
+
+        function createParticleSystem() {
+            const particleCount = 100;
+            const particles = new THREE.BufferGeometry();
+            const positions = new Float32Array(particleCount * 3);
+            
+            for (let i = 0; i < particleCount * 3; i += 3) {
+                positions[i] = (Math.random() - 0.5) * 100;     // x
+                positions[i + 1] = Math.random() * 100 - 50;    // y
+                positions[i + 2] = (Math.random() - 0.5) * 100; // z
+            }
+            
+            particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            
+            const particleMaterial = new THREE.PointsMaterial({
+                color: 0x00ff7f,
+                size: 2,
+                transparent: true,
+                opacity: 0.6
+            });
+            
+            const particleSystem = new THREE.Points(particles, particleMaterial);
+            scene.add(particleSystem);
+        }
+
+        function updateStackingAnimation() {
+            const scrollProgress = Math.min(scrollY / (maxScrollHeight * 0.4), 1); // Stack animation in first 40% of scroll
+            const notesToShow = Math.floor(scrollProgress * stackedNotes.length);
+            
+            stackedNotes.forEach((note, index) => {
+                if (index <= notesToShow && !note.userData.isVisible) {
+                    // Show note with animation
+                    note.visible = true;
+                    note.userData.isVisible = true;
+                    
+                    // Animate note falling into place
+                    const animationProgress = Math.min((Date.now() - (scrollY * 10 + note.userData.animationDelay)) / 1000, 1);
+                    if (animationProgress > 0) {
+                        const easeOut = 1 - Math.pow(1 - animationProgress, 3);
+                        note.position.y = note.userData.originalY - 20 + (20 * easeOut);
+                        
+                        // Add slight bounce effect
+                        if (easeOut > 0.8) {
+                            const bounceProgress = (easeOut - 0.8) / 0.2;
+                            note.position.y += Math.sin(bounceProgress * Math.PI * 3) * 0.3 * (1 - bounceProgress);
+                        }
+                    }
+                }
+                
+                if (note.userData.isVisible) {
+                    // Add subtle floating animation to stacked notes
+                    const floatOffset = Math.sin(animationTime * 0.003 + index * 0.1) * 0.02;
+                    note.position.y = note.userData.originalY + floatOffset;
+                    
+                    // Very subtle rotation
+                    note.rotation.z = note.userData.finalRotation.z + Math.sin(animationTime * 0.002 + index * 0.2) * 0.01;
+                }
+            });
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            animationTime += 16; // Approximate 60fps
+
+            // Update floating coins
+            floatingCoins.forEach(coin => {
+                coin.position.add(coin.userData.velocity);
+                coin.rotation.x += coin.userData.rotationSpeed.x;
+                coin.rotation.y += coin.userData.rotationSpeed.y;
+                coin.rotation.z += coin.userData.rotationSpeed.z;
+                
+                // Add floating motion
+                coin.position.y += Math.sin(animationTime * coin.userData.floatFrequency) * coin.userData.floatAmplitude * 0.001;
+                
+                // Boundary wrapping
+                if (coin.position.y > 30) coin.position.y = -30;
+                if (coin.position.x > 40) coin.position.x = -40;
+                if (coin.position.x < -40) coin.position.x = 40;
+            });
+
+            // Mouse interaction for camera
+            camera.position.x += (mouse.x * 5 - camera.position.x) * 0.05;
+            camera.position.y += (-mouse.y * 3 - camera.position.y) * 0.05;
+            camera.lookAt(0, 0, 0);
+
+            renderer.render(scene, camera);
+        }
+
+        function updateScrollProgress() {
+            const scrollPercent = (scrollY / (document.documentElement.scrollHeight - window.innerHeight)) * 100;
+            document.querySelector('.scroll-progress').style.width = scrollPercent + '%';
+        }
+
+        // File Upload Functionality
+        function triggerFileUpload() {
+            document.getElementById('fileInput').click();
+        }
+
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const files = e.target.files;
+            if (files.length > 0) {
+                simulateProcessing();
+            }
+        });
+
+        function simulateProcessing() {
+            const processingIndicator = document.getElementById('processingIndicator');
+            processingIndicator.style.display = 'block';
+            
+            const steps = ['step1', 'step2', 'step3', 'step4', 'step5'];
+            let currentStep = 0;
+            
+            const processNextStep = () => {
+                if (currentStep > 0) {
+                    document.getElementById(steps[currentStep - 1]).classList.remove('active');
+                }
+                
+                if (currentStep < steps.length) {
+                    document.getElementById(steps[currentStep]).classList.add('active');
+                    currentStep++;
+                    setTimeout(processNextStep, 2000);
+                } else {
+                    // Processing complete
+                    setTimeout(() => {
+                        processingIndicator.style.display = 'none';
+                        alert('🎉 Documents processed successfully! Ready to file your taxes with maximum savings.');
+                        // Reset for demo
+                        steps.forEach(step => document.getElementById(step).classList.remove('active'));
+                    }, 1000);
+                }
+            };
+            
+            processNextStep();
+        }
+
+        // Tax Calculator
+        function calculateTax() {
+            const income = parseFloat(document.getElementById('income').value) || 0;
+            const investments = Math.min(parseFloat(document.getElementById('investments').value) || 0, 150000);
+            const medical = Math.min(parseFloat(document.getElementById('medical').value) || 0, 100000);
+            
+            let taxableIncome = income - investments - medical - 50000; // Standard deduction
+            let tax = 0;
+            
+            // Tax calculation (old regime)
+            if (taxableIncome > 250000) {
+                if (taxableIncome <= 500000) {
+                    tax = (taxableIncome - 250000) * 0.05;
+                } else if (taxableIncome <= 1000000) {
+                    tax = 250000 * 0.05 + (taxableIncome - 500000) * 0.20;
+                } else {
+                    tax = 250000 * 0.05 + 500000 * 0.20 + (taxableIncome - 1000000) * 0.30;
+                }
+            }
+            
+            // Calculate tax without deductions for comparison
+            let taxableIncomeWithoutDeductions = income - 50000;
+            let taxWithoutDeductions = 0;
+            
+            if (taxableIncomeWithoutDeductions > 250000) {
+                if (taxableIncomeWithoutDeductions <= 500000) {
+                    taxWithoutDeductions = (taxableIncomeWithoutDeductions - 250000) * 0.05;
+                } else if (taxableIncomeWithoutDeductions <= 1000000) {
+                    taxWithoutDeductions = 250000 * 0.05 + (taxableIncomeWithoutDeductions - 500000) * 0.20;
+                } else {
+                    taxWithoutDeductions = 250000 * 0.05 + 500000 * 0.20 + (taxableIncomeWithoutDeductions - 1000000) * 0.30;
+                }
+            }
+            
+            const savings = Math.max(0, taxWithoutDeductions - tax);
+            document.getElementById('savingsAmount').textContent = '₹' + Math.round(savings).toLocaleString();
+        }
+
+        ['income', 'investments', 'medical'].forEach(id => {
+            document.getElementById(id).addEventListener('input', calculateTax);
+        });
+
+        // Window resize handler
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Initialize WebGL when page loads
+        window.addEventListener('load', initWebGL);
+
+        // Smooth scrolling for navigation links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+
+        // Enhanced multi-file upload functionality
+        let selectedFiles = [];
+        
+        // Enhanced drag and drop handlers
+        function handleDragOver(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            event.currentTarget.classList.add('drag-over');
+            event.currentTarget.style.borderColor = '#48bb78';
+            event.currentTarget.style.backgroundColor = 'rgba(72, 187, 120, 0.15)';
+        }
+        
+        function handleDragLeave(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            event.currentTarget.classList.remove('drag-over');
+            event.currentTarget.style.borderColor = 'rgba(72, 187, 120, 0.5)';
+            event.currentTarget.style.backgroundColor = 'rgba(72, 187, 120, 0.05)';
+        }
+        
+        function handleDrop(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            handleDragLeave(event);
+            
+            const files = Array.from(event.dataTransfer.files);
+            addFilesToSelection(files);
+        }
+        
+        function addFilesToSelection(files) {
+            const validFiles = files.filter(file => {
+                const validTypes = ['.pdf', '.xlsx', '.xls', '.csv', '.jpg', '.jpeg', '.png', '.doc', '.docx'];
+                const fileExt = '.' + file.name.split('.').pop().toLowerCase();
+                return validTypes.includes(fileExt);
+            });
+            
+            if (validFiles.length !== files.length) {
+                alert(`⚠️ Some files were skipped. Only PDF, Excel, CSV, and image files are supported.`);
+            }
+            
+            // Add new files to selection (avoid duplicates)
+            validFiles.forEach(file => {
+                if (!selectedFiles.find(f => f.name === file.name && f.size === file.size)) {
+                    selectedFiles.push(file);
+                }
+            });
+            
+            updateFilePreview();
+        }
+        
+        function updateFilePreview() {
+            const filePreview = document.getElementById('filePreview');
+            const fileList = document.getElementById('fileList');
+            const readyToAnalyze = document.getElementById('readyToAnalyze');
+            
+            if (selectedFiles.length === 0) {
+                filePreview.style.display = 'none';
+                readyToAnalyze.style.display = 'none';
+                return;
+            }
+            
+            filePreview.style.display = 'block';
+            readyToAnalyze.style.display = 'block';
+            fileList.innerHTML = '';
+            
+            // Add click handler to process button after showing it
+            setTimeout(() => {
+                const processBtn = document.getElementById('processButton');
+                if (processBtn) {
+                    console.log('Found process button, adding click handler');
+                    processBtn.onclick = function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        console.log('Process button clicked via onclick!');
+                        processSelectedFiles();
+                    };
+                }
+            }, 100);
+            
+            selectedFiles.forEach((file, index) => {
+                const fileItem = document.createElement('div');
+                fileItem.style.cssText = `
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    padding: 0.75rem;
+                    margin: 0.5rem 0;
+                    background: rgba(72, 187, 120, 0.1);
+                    border: 1px solid rgba(72, 187, 120, 0.3);
+                    border-radius: 8px;
+                `;
+                
+                const fileIcon = getFileIcon(file.name);
+                const fileSize = (file.size / (1024 * 1024)).toFixed(1);
+                
+                fileItem.innerHTML = `
+                    <div style="display: flex; align-items: center; flex: 1;">
+                        <span style="font-size: 1.5rem; margin-right: 0.75rem;">${fileIcon}</span>
+                        <div>
+                            <div style="font-weight: 600; color: #e2e8f0;">${file.name}</div>
+                            <div style="font-size: 0.8rem; color: #a0aec0;">${fileSize} MB</div>
+                        </div>
+                    </div>
+                    <button onclick="removeFile(${index})" style="
+                        background: rgba(255,99,99,0.2);
+                        border: 1px solid #ff6363;
+                        color: #ff6363;
+                        padding: 0.25rem 0.5rem;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-size: 0.8rem;
+                    ">✕</button>
+                `;
+                
+                fileList.appendChild(fileItem);
+            });
+        }
+        
+        function getFileIcon(filename) {
+            const ext = filename.split('.').pop().toLowerCase();
+            switch(ext) {
+                case 'pdf': return '📄';
+                case 'xlsx':
+                case 'xls': return '📊';
+                case 'csv': return '📈';
+                case 'jpg':
+                case 'jpeg':
+                case 'png': return '🖼️';
+                case 'doc':
+                case 'docx': return '📝';
+                default: return '📁';
+            }
+        }
+        
+        function removeFile(index) {
+            selectedFiles.splice(index, 1);
+            updateFilePreview();
+        }
+        
+        function clearFiles() {
+            selectedFiles = [];
+            updateFilePreview();
+            document.getElementById('fileInput').value = '';
+            document.getElementById('readyToAnalyze').style.display = 'none';
+        }
+        
+        function processSelectedFiles() {
+            console.log('processSelectedFiles called with files:', selectedFiles.length);
+            if (selectedFiles.length === 0) {
+                alert('⚠️ Please select at least one document to process.');
+                return;
+            }
+            
+            // Show confirmation dialog
+            console.log('Showing analysis dialog...');
+            showAnalysisDialog();
+        }
+        
+        function showAnalysisDialog() {
+            console.log('showAnalysisDialog called');
+            // Create dialog overlay
+            const dialogOverlay = document.createElement('div');
+            dialogOverlay.id = 'analysisDialog';
+            dialogOverlay.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100vw;
+                height: 100vh;
+                background: rgba(0, 0, 0, 0.8);
+                backdrop-filter: blur(10px);
+                z-index: 10000;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                animation: fadeIn 0.3s ease-out;
+            `;
+            
+            // Create dialog content
+            const dialogContent = document.createElement('div');
+            dialogContent.style.cssText = `
+                background: linear-gradient(135deg, #1a2332 0%, #2d3748 100%);
+                border: 2px solid rgba(72, 187, 120, 0.4);
+                border-radius: 20px;
+                padding: 3rem;
+                max-width: 500px;
+                text-align: center;
+                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+                animation: slideIn 0.3s ease-out;
+            `;
+            
+            dialogContent.innerHTML = `
+                <div style="font-size: 4rem; margin-bottom: 1rem;">🤖</div>
+                <h2 style="color: #48bb78; margin-bottom: 1rem; font-size: 1.8rem;">Start AI Analysis?</h2>
+                <p style="color: #a0aec0; margin-bottom: 2rem; line-height: 1.6;">
+                    Ready to analyze ${selectedFiles.length} document(s) with our AI-powered tax assistant?
+                    <br><br>
+                    <strong style="color: #48bb78;">🔒 All processing happens locally on your device</strong>
+                </p>
+                <div style="display: flex; gap: 1rem; justify-content: center;">
+                    <button onclick="closeAnalysisDialog()" style="
+                        background: rgba(255, 99, 99, 0.2);
+                        border: 2px solid #ff6363;
+                        color: #ff6363;
+                        padding: 0.75rem 1.5rem;
+                        border-radius: 10px;
+                        cursor: pointer;
+                        font-weight: 600;
+                        transition: all 0.3s ease;
+                    " onmouseover="this.style.background='rgba(255, 99, 99, 0.3)'" 
+                       onmouseout="this.style.background='rgba(255, 99, 99, 0.2)'">
+                        Cancel
+                    </button>
+                    <button onclick="startAnalysis()" style="
+                        background: linear-gradient(135deg, #48bb78, #38a169);
+                        border: none;
+                        color: white;
+                        padding: 0.75rem 2rem;
+                        border-radius: 10px;
+                        cursor: pointer;
+                        font-weight: 600;
+                        box-shadow: 0 10px 30px rgba(72, 187, 120, 0.3);
+                        transition: all 0.3s ease;
+                    " onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 15px 40px rgba(72, 187, 120, 0.4)'" 
+                       onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 10px 30px rgba(72, 187, 120, 0.3)'">
+                        🚀 Start Analysis
+                    </button>
+                </div>
+            `;
+            
+            dialogOverlay.appendChild(dialogContent);
+            document.body.appendChild(dialogOverlay);
+            
+            // Add animation styles
+            const style = document.createElement('style');
+            style.textContent = `
+                @keyframes fadeIn {
+                    from { opacity: 0; }
+                    to { opacity: 1; }
+                }
+                @keyframes slideIn {
+                    from { transform: translateY(-50px); opacity: 0; }
+                    to { transform: translateY(0); opacity: 1; }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+        
+        function closeAnalysisDialog() {
+            const dialog = document.getElementById('analysisDialog');
+            if (dialog) {
+                dialog.remove();
+            }
+        }
+        
+        function startAnalysis() {
+            closeAnalysisDialog();
+            processUploadedFiles(selectedFiles);
+        }
+        
+        function showLiveProcessingDialog() {
+            // Create live processing dialog
+            const liveDialog = document.createElement('div');
+            liveDialog.id = 'liveProcessingDialog';
+            liveDialog.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100vw;
+                height: 100vh;
+                background: rgba(0, 0, 0, 0.9);
+                backdrop-filter: blur(10px);
+                z-index: 10000;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            `;
+            
+            liveDialog.innerHTML = `
+                <div style="
+                    background: linear-gradient(135deg, #1a2332 0%, #2d3748 100%);
+                    border: 2px solid rgba(72, 187, 120, 0.4);
+                    border-radius: 20px;
+                    padding: 3rem;
+                    max-width: 600px;
+                    min-width: 500px;
+                    text-align: center;
+                    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+                ">
+                    <div style="font-size: 4rem; margin-bottom: 1rem;">🤖</div>
+                    <h2 style="color: #48bb78; margin-bottom: 1rem; font-size: 2rem;">Processing Your Documents</h2>
+                    <p style="color: #a0aec0; margin-bottom: 2rem;">AI is analyzing your tax documents locally on your device</p>
+                    
+                    <!-- Live Status Steps -->
+                    <div id="liveSteps" style="text-align: left; margin: 2rem 0;">
+                        <div class="live-step" data-step="1" style="
+                            display: flex;
+                            align-items: center;
+                            gap: 1rem;
+                            padding: 0.75rem;
+                            margin: 0.5rem 0;
+                            border-radius: 8px;
+                            border: 1px solid rgba(72, 187, 120, 0.2);
+                            background: rgba(72, 187, 120, 0.05);
+                        ">
+                            <div class="step-icon" style="
+                                width: 24px;
+                                height: 24px;
+                                border-radius: 50%;
+                                background: rgba(72, 187, 120, 0.2);
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                color: #48bb78;
+                                font-size: 12px;
+                            ">⏳</div>
+                            <div style="color: #a0aec0;">Creating analysis session...</div>
+                        </div>
+                        
+                        <div class="live-step" data-step="2" style="
+                            display: flex;
+                            align-items: center;
+                            gap: 1rem;
+                            padding: 0.75rem;
+                            margin: 0.5rem 0;
+                            border-radius: 8px;
+                            border: 1px solid rgba(72, 187, 120, 0.1);
+                            background: rgba(72, 187, 120, 0.02);
+                        ">
+                            <div class="step-icon" style="
+                                width: 24px;
+                                height: 24px;
+                                border-radius: 50%;
+                                background: rgba(72, 187, 120, 0.1);
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                color: #a0aec0;
+                                font-size: 12px;
+                            ">⏳</div>
+                            <div style="color: #a0aec0;">Uploading documents securely...</div>
+                        </div>
+                        
+                        <div class="live-step" data-step="3" style="
+                            display: flex;
+                            align-items: center;
+                            gap: 1rem;
+                            padding: 0.75rem;
+                            margin: 0.5rem 0;
+                            border-radius: 8px;
+                            border: 1px solid rgba(72, 187, 120, 0.1);
+                            background: rgba(72, 187, 120, 0.02);
+                        ">
+                            <div class="step-icon" style="
+                                width: 24px;
+                                height: 24px;
+                                border-radius: 50%;
+                                background: rgba(72, 187, 120, 0.1);
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                color: #a0aec0;
+                                font-size: 12px;
+                            ">⏳</div>
+                            <div style="color: #a0aec0;">Extracting data with AI...</div>
+                        </div>
+                        
+                        <div class="live-step" data-step="4" style="
+                            display: flex;
+                            align-items: center;
+                            gap: 1rem;
+                            padding: 0.75rem;
+                            margin: 0.5rem 0;
+                            border-radius: 8px;
+                            border: 1px solid rgba(72, 187, 120, 0.1);
+                            background: rgba(72, 187, 120, 0.02);
+                        ">
+                            <div class="step-icon" style="
+                                width: 24px;
+                                height: 24px;
+                                border-radius: 50%;
+                                background: rgba(72, 187, 120, 0.1);
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                color: #a0aec0;
+                                font-size: 12px;
+                            ">⏳</div>
+                            <div style="color: #a0aec0;">Calculating tax optimizations...</div>
+                        </div>
+                        
+                        <div class="live-step" data-step="5" style="
+                            display: flex;
+                            align-items: center;
+                            gap: 1rem;
+                            padding: 0.75rem;
+                            margin: 0.5rem 0;
+                            border-radius: 8px;
+                            border: 1px solid rgba(72, 187, 120, 0.1);
+                            background: rgba(72, 187, 120, 0.02);
+                        ">
+                            <div class="step-icon" style="
+                                width: 24px;
+                                height: 24px;
+                                border-radius: 50%;
+                                background: rgba(72, 187, 120, 0.1);
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                color: #a0aec0;
+                                font-size: 12px;
+                            ">⏳</div>
+                            <div style="color: #a0aec0;">Generating detailed report...</div>
+                        </div>
+                    </div>
+                    
+                    <div style="color: #a0aec0; font-size: 0.9rem; margin-top: 1.5rem;">
+                        🔒 All processing happens locally • Your data never leaves your device
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(liveDialog);
+            
+            // Start the live step animation
+            simulateLiveProcessing();
+        }
+        
+        function simulateLiveProcessing() {
+            const steps = document.querySelectorAll('.live-step');
+            let currentStep = 0;
+            
+            function activateStep(stepIndex) {
+                if (stepIndex < steps.length) {
+                    const step = steps[stepIndex];
+                    const stepIcon = step.querySelector('.step-icon');
+                    
+                    // Activate current step
+                    step.style.background = 'rgba(72, 187, 120, 0.1)';
+                    step.style.border = '1px solid rgba(72, 187, 120, 0.3)';
+                    stepIcon.textContent = '⏳';
+                    stepIcon.style.background = 'rgba(72, 187, 120, 0.3)';
+                    stepIcon.style.color = '#48bb78';
+                    
+                    // Add pulsing animation
+                    stepIcon.style.animation = 'pulse 2s infinite';
+                    
+                    // Complete after delay
+                    setTimeout(() => {
+                        stepIcon.textContent = '✅';
+                        stepIcon.style.background = 'rgba(72, 187, 120, 0.8)';
+                        stepIcon.style.color = 'white';
+                        stepIcon.style.animation = 'none';
+                        step.style.background = 'rgba(72, 187, 120, 0.15)';
+                        
+                        // Move to next step
+                        if (stepIndex < steps.length - 1) {
+                            setTimeout(() => activateStep(stepIndex + 1), 500);
+                        }
+                    }, 2000 + Math.random() * 1000); // Random delay 2-3 seconds
+                }
+            }
+            
+            // Start with first step
+            activateStep(0);
+        }
+        
+        // Enhanced file processing with live progress tracking
+        async function processUploadedFiles(files) {
+            const formData = new FormData();
+            for (let file of files) {
+                formData.append('files', file);
+            }
+            
+            try {
+                // Show processing animation with live updates
+                showLiveProcessingDialog(files);
+                
+                // Step 1: Create a new session
+                updateProcessingStep('Creating analysis session...', 10, '');
+                const sessionResponse = await fetch('/api/sessions/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken')
+                    },
+                    body: JSON.stringify({'name': 'TaxSahaj Document Analysis'})
+                });
+                
+                if (!sessionResponse.ok) {
+                    throw new Error('Failed to create session');
+                }
+                
+                const sessionData = await sessionResponse.json();
+                const sessionId = sessionData.session_id;
+                
+                // Step 2: Upload files to the session
+                updateProcessingStep('Uploading documents securely...', 20, '');
+                const uploadResponse = await fetch(`/api/sessions/${sessionId}/upload_document/`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': getCookie('csrftoken')
+                    },
+                    body: formData
+                });
+                
+                if (!uploadResponse.ok) {
+                    throw new Error('Failed to upload documents');
+                }
+                
+                // Step 3: Trigger analysis
+                updateProcessingStep('Starting AI analysis...', 30, '');
+                const analyzeResponse = await fetch(`/api/sessions/${sessionId}/analyze/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken')
+                    },
+                    body: JSON.stringify({})
+                });
+                
+                if (!analyzeResponse.ok) {
+                    throw new Error('Failed to start analysis');
+                }
+                
+                // Store session ID for progress tracking
+                localStorage.setItem('currentSessionId', sessionId);
+                
+                // Start real-time progress polling
+                startLiveProgressPolling(sessionId);
+                
+            } catch (error) {
+                console.error('Error processing files:', error);
+                closeLiveProcessingDialog();
+                alert('Error processing documents: ' + error.message);
+            }
+        }
+        
+        function showLiveProcessingDialog(files) {
+            // Create live processing dialog
+            const liveDialog = document.createElement('div');
+            liveDialog.id = 'liveProcessingDialog';
+            liveDialog.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100vw;
+                height: 100vh;
+                background: rgba(0, 0, 0, 0.9);
+                backdrop-filter: blur(10px);
+                z-index: 10000;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            `;
+            
+            liveDialog.innerHTML = `
+                <div style="
+                    background: linear-gradient(135deg, #1a2332 0%, #2d3748 100%);
+                    border: 2px solid rgba(72, 187, 120, 0.4);
+                    border-radius: 20px;
+                    padding: 3rem;
+                    max-width: 700px;
+                    min-width: 600px;
+                    text-align: center;
+                    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+                ">
+                    <div style="font-size: 4rem; margin-bottom: 1rem;">🤖</div>
+                    <h2 style="color: #48bb78; margin-bottom: 1rem; font-size: 2rem;">Processing Your Documents</h2>
+                    <p style="color: #a0aec0; margin-bottom: 2rem;">AI is analyzing ${files.length} document(s) locally on your device</p>
+                    
+                    <!-- Progress Bar -->
+                    <div style="
+                        background: rgba(72, 187, 120, 0.1);
+                        border-radius: 10px;
+                        height: 8px;
+                        margin: 2rem 0;
+                        overflow: hidden;
+                    ">
+                        <div id="liveProgressBar" style="
+                            background: linear-gradient(90deg, #48bb78, #38a169);
+                            height: 100%;
+                            width: 0%;
+                            transition: width 0.3s ease;
+                        "></div>
+                    </div>
+                    
+                    <!-- Current Status -->
+                    <div id="liveStatus" style="color: #a0aec0; margin-bottom: 1rem; font-size: 1.1rem;">
+                        Initializing...
+                    </div>
+                    
+                    <!-- Current File -->
+                    <div id="liveCurrentFile" style="color: #48bb78; margin-bottom: 2rem; font-weight: 600;">
+                        Preparing analysis...
+                    </div>
+                    
+                    <!-- File List -->
+                    <div style="text-align: left; max-height: 200px; overflow-y: auto; margin: 2rem 0;">
+                        <h4 style="color: #48bb78; margin-bottom: 1rem;">Documents to Process:</h4>
+                        <div id="liveFileList">
+                            ${files.map((file, index) => `
+                                <div id="file-${index}" style="
+                                    display: flex;
+                                    align-items: center;
+                                    gap: 1rem;
+                                    padding: 0.5rem;
+                                    margin: 0.25rem 0;
+                                    border-radius: 6px;
+                                    background: rgba(72, 187, 120, 0.05);
+                                    transition: all 0.3s ease;
+                                ">
+                                    <div class="file-status" data-file-index="${index}" style="
+                                        width: 20px;
+                                        height: 20px;
+                                        border-radius: 50%;
+                                        background: rgba(72, 187, 120, 0.2);
+                                        display: flex;
+                                        align-items: center;
+                                        justify-content: center;
+                                        font-size: 12px;
+                                        color: #a0aec0;
+                                        transition: all 0.4s ease;
+                                    ">⏳</div>
+                                    <div style="color: #a0aec0; flex: 1; display: flex; flex-direction: column;">
+                                        <div class="file-name">${file.name}</div>
+                                        <div class="file-progress-text" style="font-size: 0.8rem; color: #68d391; margin-top: 2px; opacity: 0;">
+                                            Queued for processing
+                                        </div>
+                                    </div>
+                                    <div class="file-progress-bar" style="
+                                        width: 60px;
+                                        height: 4px;
+                                        background: rgba(72, 187, 120, 0.2);
+                                        border-radius: 2px;
+                                        overflow: hidden;
+                                    ">
+                                        <div class="file-progress-fill" style="
+                                            width: 0%;
+                                            height: 100%;
+                                            background: linear-gradient(90deg, #48bb78, #38a169);
+                                            transition: width 0.4s ease;
+                                        "></div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                    
+                    <div style="color: #a0aec0; font-size: 0.9rem; margin-top: 1.5rem;">
+                        🔒 All processing happens locally • Your data never leaves your device
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(liveDialog);
+        }
+        
+        function updateProcessingStep(status, progress, currentFile) {
+            const liveStatus = document.getElementById('liveStatus');
+            const liveProgressBar = document.getElementById('liveProgressBar');
+            const liveCurrentFile = document.getElementById('liveCurrentFile');
+            
+            if (liveStatus) liveStatus.textContent = status;
+            if (liveProgressBar) liveProgressBar.style.width = progress + '%';
+            if (liveCurrentFile && currentFile) liveCurrentFile.textContent = `📄 ${currentFile}`;
+        }
+        
+        function updateDocumentProgress(documents) {
+            documents.forEach((doc, index) => {
+                const fileElement = document.getElementById(`file-${index}`);
+                if (!fileElement) return;
+                
+                const statusElement = fileElement.querySelector('.file-status');
+                const progressText = fileElement.querySelector('.file-progress-text');
+                const progressFill = fileElement.querySelector('.file-progress-fill');
+                
+                if (statusElement && progressText && progressFill) {
+                    // Update status icon and text based on document status
+                    progressText.style.opacity = '1';
+                    progressText.textContent = doc.status_text;
+                    progressFill.style.width = doc.progress_percentage + '%';
+                    
+                    if (doc.status === 'UPLOADED') {
+                        statusElement.textContent = '⏳';
+                        statusElement.style.background = 'rgba(255, 193, 7, 0.6)';
+                        statusElement.style.color = 'white';
+                        fileElement.style.background = 'rgba(255, 193, 7, 0.05)';
+                    } else if (doc.status === 'PROCESSING') {
+                        statusElement.textContent = '🔄';
+                        statusElement.style.background = 'rgba(0, 123, 255, 0.6)';
+                        statusElement.style.color = 'white';
+                        statusElement.style.animation = 'spin 1s linear infinite';
+                        fileElement.style.background = 'rgba(0, 123, 255, 0.1)';
+                        fileElement.style.transform = 'scale(1.02)';
+                    } else if (doc.status === 'PROCESSED') {
+                        statusElement.textContent = '✅';
+                        statusElement.style.background = 'rgba(72, 187, 120, 0.8)';
+                        statusElement.style.color = 'white';
+                        statusElement.style.animation = 'none';
+                        fileElement.style.background = 'rgba(72, 187, 120, 0.1)';
+                        fileElement.style.transform = 'scale(1)';
+                    } else if (doc.status === 'FAILED') {
+                        statusElement.textContent = '❌';
+                        statusElement.style.background = 'rgba(220, 53, 69, 0.6)';
+                        statusElement.style.color = 'white';
+                        statusElement.style.animation = 'none';
+                        fileElement.style.background = 'rgba(220, 53, 69, 0.05)';
+                        fileElement.style.transform = 'scale(1)';
+                    }
+                }
+            });
+        }
+        
+        function startLiveProgressPolling(sessionId) {
+            // Add CSS animation for spinning
+            if (!document.getElementById('spinAnimation')) {
+                const style = document.createElement('style');
+                style.id = 'spinAnimation';
+                style.textContent = `
+                    @keyframes spin {
+                        0% { transform: rotate(0deg); }
+                        100% { transform: rotate(360deg); }
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+            
+            const pollInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(`/api/sessions/${sessionId}/status/`);
+                    const data = await response.json();
+                    
+                    console.log('Status update:', data); // Debug log
+                    
+                    // Update overall progress
+                    const overallProgress = data.overall_progress || 0;
+                    updateProcessingStep(
+                        `Processing ${data.processing_documents || 0} documents... (${data.processed_documents}/${data.total_documents} complete)`,
+                        overallProgress,
+                        ''
+                    );
+                    
+                    // Update per-document progress
+                    if (data.documents) {
+                        updateDocumentProgress(data.documents);
+                    }
+                    
+                    // Check if processing is complete
+                    if (data.session_status === 'COMPLETED' || data.task_status === 'SUCCESS') {
+                        updateProcessingStep('Analysis complete! 🎉', 100, '');
+                        clearInterval(pollInterval);
+                        
+                        setTimeout(() => {
+                            clearInterval(pollInterval);
+                            closeLiveProcessingDialog();
+                            // Redirect to tax analysis report
+                            window.location.href = '/api/tax_analysis_report/?session_id=' + sessionId;
+                        }, 2000);
+                        
+                    } else if (data.task_status === 'FAILURE') {
+                        clearInterval(pollInterval);
+                        closeLiveProcessingDialog();
+                        alert('Analysis failed. Please try again.');
+                    }
+                    
+                } catch (error) {
+                    console.error('Error polling progress:', error);
+                }
+            }, 1000); // Poll every second
+        }
+        
+        function closeLiveProcessingDialog() {
+            const dialog = document.getElementById('liveProcessingDialog');
+            if (dialog) {
+                dialog.remove();
+            }
+        }
+        
+        // Function to get CSRF cookie
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            
+            // If no cookie found, try meta tag
+            if (!cookieValue && name === 'csrftoken') {
+                const meta = document.querySelector('meta[name="csrf-token"]');
+                if (meta) {
+                    cookieValue = meta.getAttribute('content');
+                }
+            }
+            
+            return cookieValue;
+        }
+        
+        // Function to poll analysis progress
+        async function pollAnalysisProgress(sessionId) {
+            try {
+                const response = await fetch(`/api/sessions/${sessionId}/status/`);
+                const data = await response.json();
+                
+                if (data.task_status === 'SUCCESS') {
+                    // Analysis complete - redirect to tax analysis report
+                    setTimeout(() => {
+                        document.getElementById('processingIndicator').style.display = 'none';
+                        clearFiles();
+                        // Redirect to the beautiful tax analysis report page
+                        window.location.href = '/api/tax_analysis_report/?session_id=' + sessionId;
+                    }, 2000);
+                } else if (data.task_status === 'FAILURE') {
+                    // Analysis failed
+                    document.getElementById('processingIndicator').style.display = 'none';
+                    alert('Analysis failed. Please try again.');
+                } else {
+                    // Still processing, poll again
+                    setTimeout(() => pollAnalysisProgress(sessionId), 2000);
+                }
+            } catch (error) {
+                console.error('Error checking progress:', error);
+                document.getElementById('processingIndicator').style.display = 'none';
+                alert('Error checking progress: ' + error.message);
+            }
+        }
+        
+        // Function to show analysis completion
+        function showAnalysisComplete(sessionId) {
+            // Create a new section to show results
+            const resultsSection = document.createElement('div');
+            resultsSection.innerHTML = `
+                <div style="
+                    background: rgba(72, 187, 120, 0.15);
+                    border: 2px solid #48bb78;
+                    border-radius: 15px;
+                    padding: 2rem;
+                    margin: 2rem 0;
+                    text-align: center;
+                ">
+                    <h3 style="color: #48bb78; margin-bottom: 1rem;">🎉 Analysis Complete!</h3>
+                    <p style="margin-bottom: 1.5rem;">Your tax documents have been analyzed successfully.</p>
+                    <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+                        <button onclick="viewAnalysisResults('${sessionId}')" style="
+                            background: linear-gradient(135deg, #48bb78, #38a169);
+                            border: none;
+                            color: white;
+                            padding: 0.75rem 1.5rem;
+                            border-radius: 8px;
+                            cursor: pointer;
+                            font-weight: 600;
+                        ">📊 View Analysis Results</button>
+                        <button onclick="downloadReport('${sessionId}')" style="
+                            background: rgba(72, 187, 120, 0.2);
+                            border: 2px solid #48bb78;
+                            color: #48bb78;
+                            padding: 0.75rem 1.5rem;
+                            border-radius: 8px;
+                            cursor: pointer;
+                            font-weight: 600;
+                        ">📄 Download Report</button>
+                    </div>
+                </div>
+            `;
+            
+            // Insert results section after upload section
+            const uploadSection = document.querySelector('.upload-section');
+            uploadSection.appendChild(resultsSection);
+        }
+        
+        // Function to view analysis results
+        function viewAnalysisResults(sessionId) {
+            // Navigate to dedicated results page 
+            showResultsPage(sessionId);
+        }
+        
+        async function showResultsPage(sessionId) {
+            try {
+                // Fetch the analysis results
+                const response = await fetch(`/api/sessions/${sessionId}/status/`);
+                const data = await response.json();
+                
+                // Hide the main page content
+                document.querySelector('main').style.display = 'none';
+                document.querySelector('header').style.display = 'none';
+                document.querySelector('footer').style.display = 'none';
+                
+                // Create results page
+                const resultsPage = document.createElement('div');
+                resultsPage.id = 'resultsPage';
+                resultsPage.style.cssText = `
+                    min-height: 100vh;
+                    background: linear-gradient(135deg, #0d1117 0%, #161b22 30%, #21262d 60%, #30363d 100%);
+                    color: white;
+                    padding: 2rem;
+                `;
+                
+                // Fetch detailed analysis results  
+                const analysisResponse = await fetch(`/api/sessions/${sessionId}/analysis_results/`);
+                const apiResponse = await analysisResponse.json();
+                const analysisData = apiResponse.tax_summary || {};
+                console.log('Analysis data:', analysisData);
+                
+                resultsPage.innerHTML = `
+                    <div style="max-width: 1200px; margin: 0 auto;">
+                        <!-- Header -->
+                        <div style="text-align: center; margin-bottom: 3rem;">
+                            <h1 style="
+                                font-size: 3rem;
+                                background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+                                -webkit-background-clip: text;
+                                -webkit-text-fill-color: transparent;
+                                background-clip: text;
+                                margin-bottom: 1rem;
+                            ">📊 Tax Analysis Results</h1>
+                            <p style="color: #a0aec0; font-size: 1.2rem;">AI-powered analysis of your tax documents</p>
+                        </div>
+                        
+                        <!-- Final Recommendation Banner -->
+                        <div style="
+                            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+                            border-radius: 15px;
+                            padding: 2rem;
+                            margin-bottom: 2rem;
+                            text-align: center;
+                            position: relative;
+                            overflow: hidden;
+                        ">
+                            <div style="
+                                position: absolute;
+                                top: 0;
+                                left: 0;
+                                right: 0;
+                                bottom: 0;
+                                background: url('data:image/svg+xml,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><defs><pattern id=\"grain\" width=\"100\" height=\"100\" patternUnits=\"userSpaceOnUse\"><circle cx=\"25\" cy=\"25\" r=\"1\" fill=\"%23ffffff\" opacity=\"0.1\"/><circle cx=\"75\" cy=\"25\" r=\"1\" fill=\"%23ffffff\" opacity=\"0.1\"/><circle cx=\"50\" cy=\"50\" r=\"1\" fill=\"%23ffffff\" opacity=\"0.1\"/><circle cx=\"25\" cy=\"75\" r=\"1\" fill=\"%23ffffff\" opacity=\"0.1\"/><circle cx=\"75\" cy=\"75\" r=\"1\" fill=\"%23ffffff\" opacity=\"0.1\"/></pattern></defs><rect width=\"100\" height=\"100\" fill=\"url(%23grain)\"/></svg>');
+                                opacity: 0.1;
+                            "></div>
+                            <div style="position: relative; z-index: 1;">
+                                <h2 style="color: white; margin-bottom: 1rem; font-size: 2rem;">🎯 Final Recommendation</h2>
+                                <div style="color: white; font-size: 1.3rem; margin-bottom: 1rem;">
+                                    <strong>${analysisData?.regime_comparison?.recommended_regime || 'Old Regime'} is BEST for you!</strong>
+                                </div>
+                                <div style="color: rgba(255,255,255,0.9); font-size: 1.1rem; margin-bottom: 1rem;">
+                                    ${analysisData?.regime_comparison?.old_regime_position || 'Refund available'}
+                                </div>
+                                <div style="color: rgba(255,255,255,0.8);">
+                                    💰 You save <strong>₹${(analysisData?.regime_comparison?.savings_by_old_regime || 0).toLocaleString()}</strong> by choosing the Old Regime
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Detailed Income Breakdown -->
+                        <div style="
+                            background: rgba(45, 55, 72, 0.3);
+                            border: 1px solid rgba(72, 187, 120, 0.3);
+                            border-radius: 15px;
+                            padding: 2rem;
+                            margin-bottom: 2rem;
+                        ">
+                            <h2 style="color: #48bb78; margin-bottom: 1.5rem; border-bottom: 2px solid rgba(72, 187, 120, 0.3); padding-bottom: 0.5rem;">
+                                💰 Detailed Income Calculation
+                            </h2>
+                            
+                            <!-- Salary Income Section -->
+                            <div style="margin-bottom: 2rem;">
+                                <h3 style="color: #e2e8f0; margin-bottom: 1rem;">A. Salary Income (from Form 16):</h3>
+                                <div style="background: rgba(72, 187, 120, 0.05); padding: 1.5rem; border-radius: 10px; border-left: 4px solid #48bb78;">
+                                    <div style="display: grid; gap: 0.5rem; font-family: 'Courier New', monospace;">
+                                        <div style="color: #a0aec0;">Basic Salary, Allowances, etc. (Section 17(1)): <span style="float: right; color: #e2e8f0;">₹ ${(analysisData?.income_breakdown?.salary_income?.basic_and_allowances_17_1 || 0).toLocaleString()}.00</span></div>
+                                        <div style="color: #a0aec0;">Perquisites (ESPP Gain) (Section 17(2)): <span style="float: right; color: #e2e8f0;">+ ₹ ${(analysisData?.income_breakdown?.salary_income?.perquisites_espp_17_2 || 0).toLocaleString()}.00</span></div>
+                                        <div style="border-top: 1px solid rgba(72, 187, 120, 0.3); margin: 0.5rem 0; padding-top: 0.5rem;">
+                                            <div style="color: #48bb78; font-weight: bold;">**Total Salary Income:** <span style="float: right;">**₹ ${(analysisData?.income_breakdown?.salary_income?.total_salary || 0).toLocaleString()}.00**</span></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Other Income Section -->
+                            <div style="margin-bottom: 2rem;">
+                                <h3 style="color: #e2e8f0; margin-bottom: 1rem;">B. Income from Other Sources:</h3>
+                                <div style="background: rgba(72, 187, 120, 0.05); padding: 1.5rem; border-radius: 10px; border-left: 4px solid #48bb78;">
+                                    <div style="display: grid; gap: 0.5rem; font-family: 'Courier New', monospace;">
+                                        <div style="color: #a0aec0;">Interest from Bank Deposits: <span style="float: right; color: #e2e8f0;">₹ ${(analysisData?.income_breakdown?.other_income?.bank_interest || 0).toLocaleString()}.00</span></div>
+                                        <div style="color: #a0aec0;">Dividend Income from Stocks: <span style="float: right; color: #e2e8f0;">+ ₹ ${(analysisData?.income_breakdown?.other_income?.dividend_income || 0).toLocaleString()}</span></div>
+                                        <div style="border-top: 1px solid rgba(72, 187, 120, 0.3); margin: 0.5rem 0; padding-top: 0.5rem;">
+                                            <div style="color: #48bb78; font-weight: bold;">**Total Other Income:** <span style="float: right;">**₹ ${(analysisData?.income_breakdown?.other_income?.total_other || 0).toLocaleString()}**</span></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Gross Total Income -->
+                            <div style="background: linear-gradient(135deg, rgba(72, 187, 120, 0.1), rgba(72, 187, 120, 0.2)); padding: 1.5rem; border-radius: 10px; border: 2px solid rgba(72, 187, 120, 0.3);">
+                                <h3 style="color: #48bb78; margin-bottom: 1rem;">C. Gross Total Income (A + B):</h3>
+                                <div style="font-family: 'Courier New', monospace; color: #e2e8f0;">
+                                    <div>Total Salary Income: <span style="float: right;">₹ ${(analysisData?.income_breakdown?.salary_income?.total_salary || 0).toLocaleString()}.00</span></div>
+                                    <div>Total Other Income: <span style="float: right;">+ ₹ ${(analysisData?.income_breakdown?.other_income?.total_other || 0).toLocaleString()}</span></div>
+                                    <div style="border-top: 2px solid #48bb78; margin: 0.5rem 0; padding-top: 0.5rem; font-size: 1.2rem; color: #48bb78; font-weight: bold;">
+                                        **Gross Total Income:** <span style="float: right;">**₹ ${(analysisData?.income_breakdown?.gross_total_income || 0).toLocaleString()}**</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Regime Comparison -->
+                        <div style="
+                            background: rgba(45, 55, 72, 0.3);
+                            border: 1px solid rgba(72, 187, 120, 0.3);
+                            border-radius: 15px;
+                            padding: 2rem;
+                            margin-bottom: 2rem;
+                        ">
+                            <h2 style="color: #48bb78; margin-bottom: 1.5rem; border-bottom: 2px solid rgba(72, 187, 120, 0.3); padding-bottom: 0.5rem;">
+                                ⚖️ Tax Regime Comparison
+                            </h2>
+                            
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+                                <!-- Old Regime -->
+                                <div style="background: linear-gradient(135deg, rgba(72, 187, 120, 0.1), rgba(72, 187, 120, 0.05)); padding: 1.5rem; border-radius: 10px; border: 2px solid rgba(72, 187, 120, 0.4);">
+                                    <h3 style="color: #48bb78; margin-bottom: 1rem; text-align: center;">🏛️ Old Tax Regime</h3>
+                                    <div style="font-family: 'Courier New', monospace; color: #e2e8f0; line-height: 1.6;">
+                                        <div style="margin-bottom: 1rem;">
+                                            <strong style="color: #48bb78;">Deductions Available:</strong><br>
+                                            HRA Exemption: ₹${(analysisData?.deductions_old_regime?.hra_exemption || 0).toLocaleString()}<br>
+                                            Section 80C: ₹${(analysisData?.deductions_old_regime?.section_80c || 0).toLocaleString()}<br>
+                                            Section 80CCD(1B): ₹${(analysisData?.deductions_old_regime?.section_80ccd_1b || 0).toLocaleString()}<br>
+                                            Standard Deduction: ₹${(analysisData?.deductions_old_regime?.standard_deduction || 0).toLocaleString()}<br>
+                                            Professional Tax: ₹${(analysisData?.deductions_old_regime?.professional_tax || 0).toLocaleString()}
+                                        </div>
+                                        <div style="border-top: 1px solid rgba(72, 187, 120, 0.3); padding-top: 1rem; margin-top: 1rem;">
+                                            <strong style="color: #48bb78;">Tax Calculation:</strong><br>
+                                            Taxable Income: ₹${(analysisData?.tax_calculation_old_regime?.taxable_income || 0).toLocaleString()}<br>
+                                            Tax Liability: ₹${(analysisData?.tax_calculation_old_regime?.total_tax_liability || 0).toLocaleString()}<br>
+                                            TDS Paid: ₹${(analysisData?.tax_calculation_old_regime?.tds_paid || 0).toLocaleString()}
+                                        </div>
+                                        <div style="background: rgba(72, 187, 120, 0.2); padding: 1rem; border-radius: 8px; margin-top: 1rem; text-align: center;">
+                                            <strong style="color: #48bb78; font-size: 1.1rem;">${analysisData?.regime_comparison?.old_regime_position || 'Refund Available'}</strong>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- New Regime -->
+                                <div style="background: rgba(255, 193, 7, 0.05); padding: 1.5rem; border-radius: 10px; border: 2px solid rgba(255, 193, 7, 0.3);">
+                                    <h3 style="color: #ffc107; margin-bottom: 1rem; text-align: center;">🆕 New Tax Regime</h3>
+                                    <div style="font-family: 'Courier New', monospace; color: #e2e8f0; line-height: 1.6;">
+                                        <div style="margin-bottom: 1rem;">
+                                            <strong style="color: #ffc107;">Deductions Available:</strong><br>
+                                            Standard Deduction: ₹50,000<br>
+                                            <span style="color: #a0aec0; font-style: italic;">No other deductions allowed</span>
+                                        </div>
+                                        <div style="border-top: 1px solid rgba(255, 193, 7, 0.3); padding-top: 1rem; margin-top: 1rem;">
+                                            <strong style="color: #ffc107;">Tax Calculation:</strong><br>
+                                            Taxable Income: ₹${(analysisData?.tax_calculation_new_regime?.taxable_income || 0).toLocaleString()}<br>
+                                            Tax Liability: ₹${(analysisData?.tax_calculation_new_regime?.total_tax_liability || 0).toLocaleString()}<br>
+                                            TDS Paid: ₹${(analysisData?.tax_calculation_new_regime?.tds_paid || 0).toLocaleString()}
+                                        </div>
+                                        <div style="background: rgba(255, 193, 7, 0.2); padding: 1rem; border-radius: 8px; margin-top: 1rem; text-align: center;">
+                                            <strong style="color: #ffc107; font-size: 1.1rem;">${analysisData?.regime_comparison?.new_regime_position || 'Additional Tax Required'}</strong>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Savings Summary -->
+                            <div style="background: linear-gradient(135deg, #48bb78, #38a169); padding: 1.5rem; border-radius: 10px; margin-top: 2rem; text-align: center;">
+                                <h3 style="color: white; margin-bottom: 0.5rem;">💡 Recommendation</h3>
+                                <div style="color: white; font-size: 1.2rem;">
+                                    Choose <strong>${analysisData?.regime_comparison?.recommended_regime || 'Old Regime'}</strong> to save <strong>₹${(analysisData?.regime_comparison?.savings_by_old_regime || 0).toLocaleString()}</strong>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Document Summary -->
+                        <div style="
+                            background: rgba(45, 55, 72, 0.3);
+                            border: 1px solid rgba(72, 187, 120, 0.3);
+                            border-radius: 15px;
+                            padding: 2rem;
+                            margin-bottom: 2rem;
+                        ">
+                            <h2 style="color: #48bb78; margin-bottom: 1rem;">📋 Documents Processed</h2>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem;">
+                                ${data.documents?.map(doc => `
+                                    <div style="
+                                        background: rgba(72, 187, 120, 0.1);
+                                        padding: 1rem;
+                                        border-radius: 10px;
+                                        border: 1px solid rgba(72, 187, 120, 0.3);
+                                    ">
+                                        <div style="font-weight: 600; color: #e2e8f0; margin-bottom: 0.5rem;">${doc.filename}</div>
+                                        <div style="
+                                            color: ${doc.status === 'PROCESSED' ? '#48bb78' : '#ff6363'};
+                                            font-size: 0.9rem;
+                                        ">
+                                            ${doc.status === 'PROCESSED' ? '✅ Processed' : '❌ Failed'}
+                                        </div>
+                                    </div>
+                                `).join('') || '<p style="color: #a0aec0;">No documents found</p>'}
+                            </div>
+                        </div>
+                        
+                        <!-- ITR Portal Filing Guide -->
+                        <div style="
+                            background: rgba(45, 55, 72, 0.3);
+                            border: 1px solid rgba(72, 187, 120, 0.3);
+                            border-radius: 15px;
+                            padding: 2rem;
+                            margin-bottom: 2rem;
+                        ">
+                            <h2 style="color: #48bb78; margin-bottom: 1rem;">🌐 ITR Portal Filing Guide</h2>
+                            <p style="color: #a0aec0; margin-bottom: 2rem;">Step-by-step guidance for filing your ITR on the official Income Tax portal</p>
+                            
+                            <!-- Portal Navigation Tabs -->
+                            <div style="display: flex; gap: 1rem; margin-bottom: 2rem; flex-wrap: wrap;">
+                                <button onclick="showPortalTab('income', this)" class="portal-tab active" style="
+                                    background: rgba(72, 187, 120, 0.2);
+                                    border: 2px solid #48bb78;
+                                    color: #48bb78;
+                                    padding: 0.75rem 1.5rem;
+                                    border-radius: 8px;
+                                    cursor: pointer;
+                                    font-weight: 600;
+                                    transition: all 0.3s ease;
+                                ">💰 Income Sections</button>
+                                <button onclick="showPortalTab('deductions', this)" class="portal-tab" style="
+                                    background: rgba(72, 187, 120, 0.1);
+                                    border: 2px solid rgba(72, 187, 120, 0.3);
+                                    color: #a0aec0;
+                                    padding: 0.75rem 1.5rem;
+                                    border-radius: 8px;
+                                    cursor: pointer;
+                                    font-weight: 600;
+                                    transition: all 0.3s ease;
+                                ">📉 Deductions</button>
+                                <button onclick="showPortalTab('verification', this)" class="portal-tab" style="
+                                    background: rgba(72, 187, 120, 0.1);
+                                    border: 2px solid rgba(72, 187, 120, 0.3);
+                                    color: #a0aec0;
+                                    padding: 0.75rem 1.5rem;
+                                    border-radius: 8px;
+                                    cursor: pointer;
+                                    font-weight: 600;
+                                    transition: all 0.3s ease;
+                                ">✅ Verification</button>
+                            </div>
+                            
+                            <!-- Portal Content Tabs -->
+                            <div id="portal-income" class="portal-content" style="display: block;">
+                                <h3 style="color: #48bb78; margin-bottom: 1rem;">💰 Income from Salary</h3>
+                                <div style="background: rgba(72, 187, 120, 0.05); padding: 1.5rem; border-radius: 10px; margin-bottom: 1rem;">
+                                    <h4 style="color: #e2e8f0; margin-bottom: 1rem;">Portal Steps:</h4>
+                                    <ol style="color: #a0aec0; line-height: 1.8;">
+                                        <li>Login to <a href="https://www.incometax.gov.in/iec/foportal/" target="_blank" style="color: #48bb78;">incometax.gov.in</a></li>
+                                        <li>Go to 'e-File' → 'Income Tax Return' → Select ITR-2</li>
+                                        <li>Navigate to 'Income Details' → 'Salary'</li>
+                                        <li>Enter your gross salary from Form 16</li>
+                                        <li>Fill HRA, special allowance, and other components</li>
+                                        <li>Verify TDS amount matches Form 16</li>
+                                    </ol>
+                                </div>
+                                <div style="background: rgba(255, 193, 7, 0.1); padding: 1rem; border-radius: 8px; border-left: 4px solid #ffc107;">
+                                    <p style="color: #ffc107; margin: 0;"><strong>💡 Pro Tip:</strong> Keep your Form 16 handy for accurate salary details and TDS verification</p>
+                                </div>
+                            </div>
+                            
+                            <div id="portal-deductions" class="portal-content" style="display: none;">
+                                <h3 style="color: #48bb78; margin-bottom: 1rem;">📉 Deductions (Chapter VI-A)</h3>
+                                <div style="background: rgba(72, 187, 120, 0.05); padding: 1.5rem; border-radius: 10px; margin-bottom: 1rem;">
+                                    <h4 style="color: #e2e8f0; margin-bottom: 1rem;">Section 80C Deductions:</h4>
+                                    <ol style="color: #a0aec0; line-height: 1.8;">
+                                        <li>Go to 'Deductions' → 'Chapter VI-A' → '80C'</li>
+                                        <li>Enter EPF contributions (from Form 16)</li>
+                                        <li>Add PPF, NSC, ELSS investments</li>
+                                        <li>Include home loan principal repayment</li>
+                                        <li>Portal automatically applies ₹1.5 lakh limit</li>
+                                    </ol>
+                                </div>
+                            </div>
+                            
+                            <div id="portal-verification" class="portal-content" style="display: none;">
+                                <h3 style="color: #48bb78; margin-bottom: 1rem;">✅ Verification & Submission</h3>
+                                <div style="background: rgba(72, 187, 120, 0.05); padding: 1.5rem; border-radius: 10px; margin-bottom: 1rem;">
+                                    <h4 style="color: #e2e8f0; margin-bottom: 1rem;">Final Steps:</h4>
+                                    <ol style="color: #a0aec0; line-height: 1.8;">
+                                        <li>Review all sections for accuracy</li>
+                                        <li>Use 'Preview' to check complete ITR</li>
+                                        <li>Submit the return</li>
+                                        <li>Verify using Aadhaar OTP (fastest method)</li>
+                                        <li>Download acknowledgment receipt</li>
+                                        <li>Save ITR-V for records</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Action Buttons -->
+                        <div style="text-align: center; margin-top: 3rem;">
+                            <button onclick="downloadReport('${sessionId}')" style="
+                                background: linear-gradient(135deg, #48bb78, #38a169);
+                                border: none;
+                                color: white;
+                                padding: 1rem 2rem;
+                                border-radius: 10px;
+                                cursor: pointer;
+                                font-weight: 600;
+                                font-size: 1.1rem;
+                                margin: 0 0.5rem;
+                                box-shadow: 0 10px 30px rgba(72, 187, 120, 0.3);
+                                transition: all 0.3s ease;
+                            " onmouseover="this.style.transform='translateY(-3px)'" 
+                               onmouseout="this.style.transform='translateY(0)'">
+                                📄 Download Report
+                            </button>
+                            <button onclick="window.open('https://www.incometax.gov.in/iec/foportal/', '_blank')" style="
+                                background: rgba(72, 187, 120, 0.2);
+                                border: 2px solid #48bb78;
+                                color: #48bb78;
+                                padding: 1rem 2rem;
+                                border-radius: 10px;
+                                cursor: pointer;
+                                font-weight: 600;
+                                font-size: 1.1rem;
+                                margin: 0 0.5rem;
+                                transition: all 0.3s ease;
+                            " onmouseover="this.style.background='rgba(72, 187, 120, 0.3)'" 
+                               onmouseout="this.style.background='rgba(72, 187, 120, 0.2)'">
+                                🌐 Open ITR Portal
+                            </button>
+                            <button onclick="goBackToUpload()" style="
+                                background: rgba(72, 187, 120, 0.1);
+                                border: 2px solid rgba(72, 187, 120, 0.3);
+                                color: #a0aec0;
+                                padding: 1rem 2rem;
+                                border-radius: 10px;
+                                cursor: pointer;
+                                font-weight: 600;
+                                font-size: 1.1rem;
+                                margin: 0 0.5rem;
+                                transition: all 0.3s ease;
+                            " onmouseover="this.style.background='rgba(72, 187, 120, 0.2)'; this.style.color='#48bb78'" 
+                               onmouseout="this.style.background='rgba(72, 187, 120, 0.1)'; this.style.color='#a0aec0'">
+                                🔄 Analyze More Documents
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                document.body.appendChild(resultsPage);
+                
+            } catch (error) {
+                console.error('Error loading results:', error);
+                alert('Error loading results: ' + error.message);
+            }
+        }
+        
+        function enhanceGuideWithResults(guideSection, data, sessionId) {
+            // Create results summary section
+            const resultsSummary = document.createElement('div');
+            resultsSummary.className = 'results-summary';
+            resultsSummary.style.cssText = `
+                background: rgba(72, 187, 120, 0.1);
+                border: 2px solid rgba(72, 187, 120, 0.3);
+                border-radius: 15px;
+                padding: 2rem;
+                margin-bottom: 3rem;
+                text-align: center;
+            `;
+            
+            resultsSummary.innerHTML = `
+                <h2 style="color: #48bb78; margin-bottom: 1rem;">🎉 Analysis Complete!</h2>
+                <p style="color: #a0aec0; margin-bottom: 1.5rem;">
+                    Your tax documents have been processed successfully. Follow the enhanced guide below to file your ITR.
+                </p>
+                <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; margin-top: 1.5rem;">
+                    <button onclick="downloadReport('${sessionId}')" style="
+                        background: linear-gradient(135deg, #48bb78, #38a169);
+                        border: none;
+                        color: white;
+                        padding: 0.75rem 1.5rem;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        font-weight: 600;
+                    ">📄 Download Report</button>
+                    <button onclick="window.open('https://www.incometax.gov.in/iec/foportal/', '_blank')" style="
+                        background: rgba(72, 187, 120, 0.2);
+                        border: 2px solid #48bb78;
+                        color: #48bb78;
+                        padding: 0.75rem 1.5rem;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        font-weight: 600;
+                    ">🌐 Open ITR Portal</button>
+                </div>
+            `;
+            
+            // Insert results summary at the beginning of guide container
+            const guideContainer = guideSection.querySelector('.guide-container');
+            guideContainer.insertBefore(resultsSummary, guideContainer.firstChild);
+            
+            // Enhance each guide step with detailed instructions
+            enhanceGuideSteps(guideSection);
+        }
+        
+        function enhanceGuideSteps(guideSection) {
+            const steps = guideSection.querySelectorAll('.guide-step');
+            
+            // Enhanced content for each step
+            const enhancedSteps = [
+                {
+                    title: '🔐 Login to Income Tax Portal',
+                    content: `
+                        <p>Access the official portal and navigate to the correct section for filing your ITR.</p>
+                        <div style="background: rgba(72, 187, 120, 0.05); padding: 1rem; border-radius: 8px; margin-top: 1rem;">
+                            <strong style="color: #48bb78;">Detailed Steps:</strong>
+                            <ol style="margin-top: 0.5rem; color: #a0aec0;">
+                                <li>Go to <a href="https://www.incometax.gov.in/iec/foportal/" target="_blank" style="color: #48bb78;">incometax.gov.in</a></li>
+                                <li>Click "Login" and enter your PAN and password</li>
+                                <li>Navigate to "e-File" → "Income Tax Return"</li>
+                                <li>Select appropriate ITR form (likely ITR-2 for your income sources)</li>
+                            </ol>
+                        </div>
+                    `
+                },
+                {
+                    title: '📊 Enter Your Income Details',
+                    content: `
+                        <p>Input your salary, house property, and other income using the analyzed data from your documents.</p>
+                        <div style="background: rgba(72, 187, 120, 0.05); padding: 1rem; border-radius: 8px; margin-top: 1rem;">
+                            <strong style="color: #48bb78;">Portal Sections:</strong>
+                            <ul style="margin-top: 0.5rem; color: #a0aec0;">
+                                <li><strong>Salary Income:</strong> Enter gross salary, allowances, and TDS from Form 16</li>
+                                <li><strong>House Property:</strong> Enter rental income and property tax (if applicable)</li>
+                                <li><strong>Other Sources:</strong> Bank interest, fixed deposit interest</li>
+                                <li><strong>Capital Gains:</strong> Mutual fund/stock transactions (if any)</li>
+                            </ul>
+                        </div>
+                    `
+                },
+                {
+                    title: '📉 Claim All Your Deductions',
+                    content: `
+                        <p>Maximize your tax savings by claiming all eligible deductions under the old regime.</p>
+                        <div style="background: rgba(72, 187, 120, 0.05); padding: 1rem; border-radius: 8px; margin-top: 1rem;">
+                            <strong style="color: #48bb78;">Key Deduction Sections:</strong>
+                            <ul style="margin-top: 0.5rem; color: #a0aec0;">
+                                <li><strong>80C:</strong> EPF, PPF, ELSS, NSC, Home loan principal (₹1.5L limit)</li>
+                                <li><strong>80D:</strong> Health insurance premiums for self and parents</li>
+                                <li><strong>24(b):</strong> Home loan interest deduction (₹2L limit)</li>
+                                <li><strong>80TTA:</strong> Bank interest exemption (₹10K limit)</li>
+                            </ul>
+                        </div>
+                    `
+                },
+                {
+                    title: '⚖️ Regime Comparison & Selection',
+                    content: `
+                        <p>Choose between old and new tax regime based on your deductions and income level.</p>
+                        <div style="background: rgba(72, 187, 120, 0.05); padding: 1rem; border-radius: 8px; margin-top: 1rem;">
+                            <strong style="color: #48bb78;">Decision Guide:</strong>
+                            <ul style="margin-top: 0.5rem; color: #a0aec0;">
+                                <li><strong>Old Regime:</strong> Better if you have significant 80C, 80D deductions</li>
+                                <li><strong>New Regime:</strong> Higher standard deduction (₹75K) but fewer deductions</li>
+                                <li><strong>Portal Feature:</strong> Use built-in tax calculator to compare both</li>
+                            </ul>
+                        </div>
+                    `
+                },
+                {
+                    title: '✅ Verify & Submit Your Return',
+                    content: `
+                        <p>Final review, submission, and e-verification to complete your tax filing process.</p>
+                        <div style="background: rgba(72, 187, 120, 0.05); padding: 1rem; border-radius: 8px; margin-top: 1rem;">
+                            <strong style="color: #48bb78;">Final Steps:</strong>
+                            <ol style="margin-top: 0.5rem; color: #a0aec0;">
+                                <li>Review all sections using "Preview" option</li>
+                                <li>Submit your ITR after final verification</li>
+                                <li>E-verify using Aadhaar OTP (fastest method)</li>
+                                <li>Download acknowledgment and ITR-V receipt</li>
+                                <li>Save documents for future reference</li>
+                            </ol>
+                        </div>
+                    `
+                }
+            ];
+            
+            // Update each step with enhanced content
+            steps.forEach((step, index) => {
+                if (enhancedSteps[index]) {
+                    const stepContent = step.querySelector('.step-content');
+                    const heading = stepContent.querySelector('h3');
+                    
+                    // Update heading
+                    heading.textContent = enhancedSteps[index].title;
+                    
+                    // Replace content
+                    stepContent.innerHTML = `<h3>${enhancedSteps[index].title}</h3>${enhancedSteps[index].content}`;
+                }
+            });
+        }
+        
+        function goBackToUpload() {
+            // Clear any previous analysis results
+            const resultsSection = document.querySelector('.results-summary');
+            if (resultsSection) {
+                resultsSection.remove();
+            }
+            
+            // Clear previous files and scroll to upload section
+            clearFiles();
+            document.querySelector('#upload').scrollIntoView({ behavior: 'smooth' });
+        }
+        
+        // Portal tab switching functionality
+        function showPortalTab(tabName, buttonElement) {
+            // Hide all portal content
+            const contents = document.querySelectorAll('.portal-content');
+            contents.forEach(content => {
+                content.style.display = 'none';
+            });
+            
+            // Reset all tab buttons
+            const tabs = document.querySelectorAll('.portal-tab');
+            tabs.forEach(tab => {
+                tab.style.background = 'rgba(72, 187, 120, 0.1)';
+                tab.style.border = '2px solid rgba(72, 187, 120, 0.3)';
+                tab.style.color = '#a0aec0';
+                tab.classList.remove('active');
+            });
+            
+            // Show selected content
+            const selectedContent = document.getElementById(`portal-${tabName}`);
+            if (selectedContent) {
+                selectedContent.style.display = 'block';
+            }
+            
+            // Activate selected tab button
+            if (buttonElement) {
+                buttonElement.style.background = 'rgba(72, 187, 120, 0.2)';
+                buttonElement.style.border = '2px solid #48bb78';
+                buttonElement.style.color = '#48bb78';
+                buttonElement.classList.add('active');
+            }
+        }
+        
+        // Function to download report
+        function downloadReport(sessionId) {
+            window.open(`/api/download_report/?session_id=${sessionId}`, '_blank');
+        }
+        
+        // Override the original file input handler
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const files = Array.from(e.target.files);
+            if (files.length > 0) {
+                addFilesToSelection(files);
+            }
+        });
+        
+        // Add event listener for process button when DOM is ready
+        document.addEventListener('DOMContentLoaded', function() {
+            // Use event delegation since the button is created dynamically
+            document.addEventListener('click', function(e) {
+                if (e.target && e.target.id === 'processButton') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('Process button clicked!'); // Debug log
+                    processSelectedFiles();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
+                        

@@ -1,0 +1,196 @@
+version: '3.8'
+
+services:
+  # NOTE: Ollama now runs natively on host for better performance
+  # Start Ollama manually: ollama serve
+  
+  # Redis service for Celery
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - incometax_project_default # Explicitly attach to the network
+
+  # Django web application
+  web:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=False
+      - SECRET_KEY=your-super-secret-key-change-this-in-production
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - OLLAMA_MODEL=llama3:8b
+    volumes:
+      - .:/app
+      - ./media:/app/media
+      - ./static:/app/static
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py collectstatic --noinput &&
+             gunicorn --bind 0.0.0.0:8000 --workers 2 --timeout 300 incometax_project.wsgi:application"
+    networks:
+      - incometax_project_default # Explicitly attach to the network
+
+  # Celery worker for background tasks (CPU optimized)
+  celery:
+    build: .
+    restart: unless-stopped
+    environment:
+      - DEBUG=False
+      - SECRET_KEY=your-super-secret-key-change-this-in-production
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - OLLAMA_MODEL=llama3:8b
+    volumes:
+      - .:/app
+      - ./media:/app/media
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+    command: celery -A incometax_project worker --loglevel=debug --pool=solo --concurrency=1 --max-tasks-per-child=1
+    networks:
+      - incometax_project_default
+    healthcheck:
+      test: ["CMD", "celery", "-A", "incometax_project", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Celery worker 2 for parallel processing
+  celery2:
+    build: .
+    restart: unless-stopped
+    environment:
+      - DEBUG=False
+      - SECRET_KEY=your-super-secret-key-change-this-in-production
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - OLLAMA_MODEL=llama3:8b
+    volumes:
+      - .:/app
+      - ./media:/app/media
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+    command: celery -A incometax_project worker --loglevel=debug --pool=solo --concurrency=1 --max-tasks-per-child=1
+    networks:
+      - incometax_project_default
+    healthcheck:
+      test: ["CMD", "celery", "-A", "incometax_project", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Celery worker 3 for parallel processing
+  celery3:
+    build: .
+    restart: unless-stopped
+    environment:
+      - DEBUG=False
+      - SECRET_KEY=your-super-secret-key-change-this-in-production
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - OLLAMA_MODEL=llama3:8b
+    volumes:
+      - .:/app
+      - ./media:/app/media
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+    command: celery -A incometax_project worker --loglevel=debug --pool=solo --concurrency=1 --max-tasks-per-child=1
+    networks:
+      - incometax_project_default
+    healthcheck:
+      test: ["CMD", "celery", "-A", "incometax_project", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Celery Beat scheduler for periodic tasks
+  celery-beat:
+    build: .
+    restart: unless-stopped
+    environment:
+      - DEBUG=False
+      - SECRET_KEY=your-super-secret-key-change-this-in-production
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      - .:/app
+      - ./media:/app/media
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: celery -A incometax_project beat --loglevel=info
+    networks:
+      - incometax_project_default
+
+  # Celery Flower for monitoring (optional)
+  flower:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "5555:5555"
+    environment:
+      - DEBUG=False
+      - SECRET_KEY=your-super-secret-key-change-this-in-production
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: celery -A incometax_project flower --port=5555
+    networks:
+      - incometax_project_default # Explicitly attach to the network
+
+networks:
+  incometax_project_default: # Define the network
+    driver: bridge
+
+volumes:
+  redis_data:
+  ollama_data:
