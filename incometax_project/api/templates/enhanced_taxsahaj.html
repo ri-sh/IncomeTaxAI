@@ -727,6 +727,24 @@
             box-shadow: 0 0 10px rgba(0, 255, 127, 0.5);
         }
 
+        .btn-upload {
+            display: inline-block;
+            background: rgba(72, 187, 120, 0.2);
+            border: 2px solid #48bb78;
+            color: white;
+            padding: 10px 1.5rem;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            margin-top: 1rem;
+            margin-bottom: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .btn-upload:hover {
+            background: rgba(72, 187, 120, 0.3);
+        }
+
         /* Animations */
         @keyframes fadeInUp {
             from {
@@ -925,21 +943,8 @@
                             <h3>Drop Multiple Documents Here</h3>
                             <p><strong>📂 Select Multiple Files</strong> - Form 16, Bank Statements, Investment Proofs, etc.</p>
                             <p style="font-size: 0.9rem; color: #48bb78; margin-top: 0.5rem;">✨ Tip: Hold Ctrl/Cmd to select multiple files at once</p>
-                            <label for="fileInput" style="display: inline-block;">
-                                <button type="button" id="browseFilesBtn" style="
-                                    background: rgba(72, 187, 120, 0.2);
-                                    border: 2px solid #48bb78;
-                                    color: #48bb78;
-                                    padding: 0.75rem 1.5rem;
-                                    border-radius: 10px;
-                                    cursor: pointer;
-                                    font-weight: 600;
-                                    margin-top: 1rem;
-                                    transition: all 0.3s ease;
-                                " onmouseover="this.style.background='rgba(72, 187, 120, 0.3)'" 
-                                   onmouseout="this.style.background='rgba(72, 187, 120, 0.2)'">
-                                    📁 Browse Files
-                                </button>
+                            <label for="fileInput" class="btn-upload">
+                                📁 Browse Files
                             </label>
                         </div>
                         <input type="file" id="fileInput" style="display: none;" multiple accept=".pdf,.xlsx,.xls,.csv,.jpg,.jpeg,.png,.doc,.docx" onchange="handleFileSelect(event)">
