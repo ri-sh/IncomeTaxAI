@@ -235,6 +235,58 @@ def extract_capital_gains_regex(json_data):
         print(f"⚠️ Error in capital gains regex extraction: {e}")
         return None
 
+def extract_form16_tds_regex(raw_text: str) -> float:
+    """
+    Extract TDS amount from Form16 using regex patterns
+    Returns the TDS amount or 0.0 if not found
+    """
+    if not raw_text:
+        return 0.0
+    
+    print("🔍 Attempting Form16 TDS extraction with regex...")
+    
+    # Universal TDS extraction patterns for any Form16 format
+    tds_patterns = [
+        # Direct TDS phrases (most reliable)
+        r'Tax deducted and deposited[^₹\d]*₹?\s*([\d,]{5,}\.?\d*)',
+        r'Total tax deducted[:\s]*₹?\s*([\d,]{5,}\.?\d*)', 
+        r'Tax deducted at source[:\s]*₹?\s*([\d,]{5,}\.?\d*)',
+        r'Amount of tax deducted[^₹\d]*₹?\s*([\d,]{5,}\.?\d*)',
+        
+        # Common Form16 specific phrases
+        r'Tax payable[^₹\d]*₹?\s*([\d,]{6,}\.?\d*)',
+        r'Income tax[^₹\d]*deducted[^₹\d]*₹?\s*([\d,]{5,}\.?\d*)',
+        
+        # Table format quarterly TDS
+        r'(?:Quarter|Q[1-4]).*?Tax.*?(\d{5,}\.?\d*)',
+        r'(?:Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|Jan|Feb|Mar).*?(\d{5,}\.?\d*)',
+        
+        # Part A/B section patterns
+        r'Part A[^₹]*₹?\s*([\d,]{6,}\.?\d*)',
+        r'deposited.*?Central Government.*?(\d{6,}\.?\d*)',
+        
+        # General tax amount patterns (with minimum thresholds)
+        r'(?:TDS|tax.*deducted).*?(\d{5,}\.?\d*)',
+    ]
+    
+    for i, pattern in enumerate(tds_patterns):
+        matches = re.findall(pattern, raw_text, re.IGNORECASE | re.DOTALL)
+        if matches:
+            try:
+                # Take the largest TDS amount found (most likely to be the total)
+                tds_amounts = [float(match.replace(',', '')) for match in matches if match.replace(',', '').replace('.', '').isdigit()]
+                if tds_amounts:
+                    max_tds = max(tds_amounts)
+                    if max_tds > 0:
+                        print(f"✅ Found TDS amount using pattern {i+1}: ₹{max_tds:,.2f}")
+                        return max_tds
+            except (ValueError, AttributeError):
+                continue
+    
+    print("❌ No TDS amount found using regex patterns")
+    return 0.0
+
+
 def extract_form16_quarterly_data_regex(json_data):
     """Extract Form16 quarterly data using regex."""
     raw_text = json_data.get('raw_text', '')
@@ -246,6 +298,30 @@ def extract_form16_quarterly_data_regex(json_data):
     quarterly_data = {}
     total_salary = 0.0
     total_tax = 0.0
+    
+    # First try direct TDS extraction patterns
+    direct_tds_patterns = [
+        r'Tax deducted and deposited[:\s]*₹?([\d,]+\.?\d*)',
+        r'Total tax deducted[:\s]*₹?([\d,]+\.?\d*)', 
+        r'TDS[:\s]*₹?([\d,]+\.?\d*)',
+        r'Income Tax deducted[:\s]*₹?([\d,]+\.?\d*)',
+        r'Tax payable on total income[:\s]*₹?([\d,]+\.?\d*)'
+    ]
+    
+    for pattern in direct_tds_patterns:
+        match = re.search(pattern, raw_text, re.IGNORECASE)
+        if match:
+            try:
+                direct_tds = float(match.group(1).replace(',', ''))
+                if direct_tds > 0:
+                    print(f"✅ Found direct TDS amount: ₹{direct_tds:,.2f}")
+                    return {
+                        'total_salary': 0.0,  # Will be extracted separately
+                        'total_tax': direct_tds,
+                        'extraction_method': 'direct_tds_pattern'
+                    }
+            except ValueError:
+                continue
 
     quarter_patterns = {
         "Q1": r"(?:Q1|Quarter 1|1st Quarter|first quarter)[:\s]*Salary[:\s]*₹?([\d,]+\.?\d*)[\s,]*Tax[:\s]*₹?([\d,]+\.?\d*)",

@@ -27,7 +27,7 @@ curl -fsSL https://ollama.ai/install.sh | sh
 Start Ollama and download the AI model:
 ```bash
 ollama serve
-ollama pull llama3:8b
+ollama pull Qwen2.5:3b
 ```
 
 #### 2. Clone and Run

@@ -1,7 +1,12 @@
 #!/bin/bash
 
+# Source environment variables
+if [ -f .env ]; then
+    export $(cat .env | sed 's/#.*//g' | xargs)
+fi
+
 echo "🔍 Ollama Docker Optimization Debug Script"
-echo "=========================================="
+echo "==========================================""
 
 # Check if Ollama is running natively
 echo "1. Checking native Ollama..."
@@ -18,7 +23,7 @@ if [ -d ~/.ollama ]; then
     echo "   📁 Models: $(ls ~/.ollama/models/manifests/registry.ollama.ai/library/ 2>/dev/null | wc -l || echo 0)"
 else
     echo "   ❌ ~/.ollama directory not found"
-    echo "   💡 Run: mkdir -p ~/.ollama && ollama pull llama3:8b"
+    echo "   💡 Run: mkdir -p ~/.ollama && ollama pull $OLLAMA_MODEL"
 fi
 echo ""
 
@@ -75,7 +80,7 @@ START_TIME=$(date +%s)
 curl -s -X POST http://localhost:11434/api/generate \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "llama3:8b",
+    "model": "$OLLAMA_MODEL",
     "prompt": "Hello, respond with just OK",
     "stream": false
   }' > /tmp/ollama_test.json

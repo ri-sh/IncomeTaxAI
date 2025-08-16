@@ -90,3 +90,4 @@ nltk_data/
 incometax_project/static/admin/
 static/admin/
 incometax_project/static/rest_framework/
+documents/test

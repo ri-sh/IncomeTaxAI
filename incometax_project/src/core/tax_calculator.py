@@ -3,9 +3,11 @@ Tax Calculator for Indian Income Tax
 ===================================
 
 FY-aware calculator supporting FY 2023-24 and FY 2024-25.
+Includes ESOP/ESPP perquisite calculations under Section 17(2)(vi).
 """
 
 from typing import Dict, Any
+from .esop_calculator import ESOPCalculator
 
 class TaxCalculator:
     """Indian Income Tax Calculator (FY-aware)"""
@@ -16,6 +18,10 @@ class TaxCalculator:
         """
         self.financial_year = financial_year
         self._configure_for_fy(financial_year)
+        
+        # Initialize ESOP calculator
+        self.esop_calculator = ESOPCalculator(financial_year)
+        
         print(f"🧮 Tax Calculator initialized for FY {self.financial_year}")
 
     def _configure_for_fy(self, financial_year: str) -> None:
@@ -249,4 +255,111 @@ class TaxCalculator:
         for slab in old_slabs["slabs"]:
             print(f"   {slab['income_range']}: {slab['tax_rate']}")
         
-        print(f"\n💡 Standard Deduction: New ₹{new_slabs['standard_deduction']:,.0f}, Old ₹{old_slabs['standard_deduction']:,.0f}") 
+        print(f"\n💡 Standard Deduction: New ₹{new_slabs['standard_deduction']:,.0f}, Old ₹{old_slabs['standard_deduction']:,.0f}")
+    
+    def calculate_esop_perquisite(self, fmv_per_share: float, exercise_price_per_share: float, 
+                                 number_of_shares: int, exercise_date=None, is_startup: bool = False) -> Dict[str, Any]:
+        """Calculate ESOP perquisite value under Section 17(2)(vi)"""
+        return self.esop_calculator.calculate_esop_perquisite(
+            fmv_per_share=fmv_per_share,
+            exercise_price_per_share=exercise_price_per_share,
+            number_of_shares=number_of_shares,
+            exercise_date=exercise_date,
+            is_startup=is_startup
+        )
+    
+    def calculate_esop_capital_gains(self, sale_price_per_share: float, fmv_on_exercise_date: float,
+                                    number_of_shares: int, exercise_date, sale_date, is_listed: bool = True) -> Dict[str, Any]:
+        """Calculate capital gains on sale of ESOP shares"""
+        return self.esop_calculator.calculate_capital_gains_on_sale(
+            sale_price_per_share=sale_price_per_share,
+            fmv_on_exercise_date=fmv_on_exercise_date,
+            number_of_shares=number_of_shares,
+            exercise_date=exercise_date,
+            sale_date=sale_date,
+            is_listed=is_listed
+        )
+    
+    def get_esop_tax_guide(self) -> Dict[str, str]:
+        """Get ESOP taxation guide for current FY"""
+        return self.esop_calculator.get_esop_tax_guide()
+    
+    def calculate_comprehensive_tax_with_esop(self, total_income: float, deductions: float = 0.0, 
+                                             esop_perquisite: float = 0.0) -> Dict[str, Any]:
+        """Calculate comprehensive tax including ESOP perquisites"""
+        
+        # Add ESOP perquisite to total income (it's part of salary)
+        total_income_with_esop = total_income + esop_perquisite
+        
+        # Calculate tax under both regimes
+        new_regime_tax = self.calculate_new_regime_tax(total_income_with_esop)
+        old_regime_tax = self.calculate_old_regime_tax(total_income_with_esop, deductions)
+        
+        # Determine better regime
+        if new_regime_tax < old_regime_tax:
+            better_regime = "new"
+            tax_savings = old_regime_tax - new_regime_tax
+            recommended_tax = new_regime_tax
+        else:
+            better_regime = "old"
+            tax_savings = new_regime_tax - old_regime_tax
+            recommended_tax = old_regime_tax
+        
+        return {
+            "total_income_without_esop": total_income,
+            "esop_perquisite": esop_perquisite,
+            "total_income_with_esop": total_income_with_esop,
+            "new_regime_tax": new_regime_tax,
+            "old_regime_tax": old_regime_tax,
+            "better_regime": better_regime,
+            "recommended_tax": recommended_tax,
+            "tax_savings": tax_savings,
+            "esop_tax_impact": {
+                "additional_tax_new_regime": self.calculate_new_regime_tax(total_income_with_esop) - self.calculate_new_regime_tax(total_income),
+                "additional_tax_old_regime": self.calculate_old_regime_tax(total_income_with_esop, deductions) - self.calculate_old_regime_tax(total_income, deductions)
+            },
+            "deductions": deductions
+        }
+    
+    def print_esop_tax_analysis(self, fmv_per_share: float, exercise_price_per_share: float, 
+                               number_of_shares: int, current_salary: float = 0):
+        """Print detailed ESOP tax analysis"""
+        
+        # Calculate ESOP perquisite
+        esop_result = self.calculate_esop_perquisite(
+            fmv_per_share=fmv_per_share,
+            exercise_price_per_share=exercise_price_per_share,
+            number_of_shares=number_of_shares
+        )
+        
+        perquisite_value = esop_result['total_perquisite_value']
+        
+        print("🚀 ESOP PERQUISITE TAX ANALYSIS")
+        print("=" * 50)
+        print(f"📊 ESOP Details:")
+        print(f"   FMV per share: ₹{fmv_per_share:,.2f}")
+        print(f"   Exercise price: ₹{exercise_price_per_share:,.2f}")
+        print(f"   Number of shares: {number_of_shares:,}")
+        print(f"   Perquisite per share: ₹{esop_result['perquisite_per_share']:,.2f}")
+        print(f"   Total perquisite value: ₹{perquisite_value:,.2f}")
+        
+        if current_salary > 0:
+            print(f"\n💰 Tax Impact Analysis:")
+            
+            # Calculate tax with and without ESOP
+            tax_without_esop = self.calculate_new_regime_tax(current_salary)
+            tax_with_esop = self.calculate_new_regime_tax(current_salary + perquisite_value)
+            additional_tax = tax_with_esop - tax_without_esop
+            
+            print(f"   Current salary: ₹{current_salary:,.2f}")
+            print(f"   Tax without ESOP: ₹{tax_without_esop:,.2f}")
+            print(f"   Tax with ESOP: ₹{tax_with_esop:,.2f}")
+            print(f"   Additional tax due to ESOP: ₹{additional_tax:,.2f}")
+            print(f"   Effective tax rate on ESOP: {(additional_tax/perquisite_value)*100:.1f}%")
+        
+        print(f"\n📋 ESOP Tax Guide:")
+        guide = self.get_esop_tax_guide()
+        for key, value in guide.items():
+            print(f"   • {key.replace('_', ' ').title()}: {value}")
+        
+        print("=" * 50)

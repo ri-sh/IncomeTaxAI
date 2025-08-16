@@ -1,4 +1,3 @@
-version: '3.8'
 
 services:
   # NOTE: Ollama now runs natively on host for better performance
@@ -34,7 +33,7 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
-      - OLLAMA_MODEL=llama3:8b
+      - OLLAMA_MODEL=${OLLAMA_MODEL}
     volumes:
       - .:/app
       - ./media:/app/media
@@ -60,7 +59,7 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
-      - OLLAMA_MODEL=llama3:8b
+      - OLLAMA_MODEL=${OLLAMA_MODEL}
     volumes:
       - .:/app
       - ./media:/app/media
@@ -93,7 +92,7 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
-      - OLLAMA_MODEL=llama3:8b
+      - OLLAMA_MODEL=${OLLAMA_MODEL}
     volumes:
       - .:/app
       - ./media:/app/media
@@ -126,7 +125,7 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
-      - OLLAMA_MODEL=llama3:8b
+      - OLLAMA_MODEL=${OLLAMA_MODEL}
     volumes:
       - .:/app
       - ./media:/app/media

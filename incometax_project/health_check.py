@@ -17,6 +17,7 @@ import django
 django.setup()
 
 from celery import Celery
+from django.conf import settings
 
 def check_ollama_connection():
     """Test Ollama service connectivity"""
@@ -112,7 +113,7 @@ def test_ollama_inference():
     try:
         # Test simple completion
         payload = {
-            "model": "llama3:8b",
+            "model": settings.OLLAMA_MODEL,
             "prompt": "Hello, respond with just 'OK'",
             "stream": False
         }

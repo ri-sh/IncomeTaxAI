@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# Source environment variables
+if [ -f .env ]; then
+    export $(cat .env | sed 's/#.*//g' | xargs)
+fi
+
 # Production deployment script for IncomeTax AI
 
 echo "🚀 Starting production deployment..."
@@ -60,8 +65,8 @@ echo "🤖 Waiting for Ollama service to be ready..."
 sleep 10
 
 # Pull Ollama model
-echo "🤖 Pulling Ollama model llama3:8b..."
-docker-compose -f $COMPOSE_FILE exec ollama ollama pull llama3:8b
+echo "🤖 Pulling Ollama model $OLLAMA_MODEL..."
+docker-compose -f $COMPOSE_FILE exec ollama ollama pull $OLLAMA_MODEL
 
 # Test Ollama connection
 echo "🔍 Testing Ollama connection from celery container..."

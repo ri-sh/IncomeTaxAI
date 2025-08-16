@@ -1,8 +1,12 @@
 #!/bin/bash
+cd "$(dirname "$0")"
 
 # Hybrid deployment script - assumes Ollama is already running natively
 echo "🚀 Starting hybrid deployment (Native Ollama + Docker Services)..."
 
+if [ -f .env ]; then
+    export $(cat .env | sed 's/#.*//g' | xargs)
+fi
 # Check if Ollama is running
 if ! curl -s http://localhost:11434/api/tags >/dev/null 2>&1; then
     echo "❌ Ollama is not running. Please start it first:"
@@ -12,6 +16,15 @@ if ! curl -s http://localhost:11434/api/tags >/dev/null 2>&1; then
 fi
 
 echo "✅ Ollama is running natively"
+
+# Check if the model is available
+echo "🤖 Checking if the model $OLLAMA_MODEL is available..."
+if ! curl -s http://localhost:11434/api/tags | grep -q "$OLLAMA_MODEL"; then
+    echo "❌ Model $OLLAMA_MODEL is not available. Please pull it first:"
+    echo "   ollama pull $OLLAMA_MODEL"
+    exit 1
+fi
+echo "✅ Model $OLLAMA_MODEL is available"
 
 # Determine compose file
 COMPOSE_FILE="docker-compose.cpu.yml"

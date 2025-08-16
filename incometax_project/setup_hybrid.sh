@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# Source environment variables
+if [ -f .env ]; then
+    export $(cat .env | sed 's/#.*//g' | xargs)
+fi
+
 # Hybrid setup script - Ollama native, Docker for web services
 # This gives us the best of both worlds: native AI performance + containerized web app
 
@@ -44,16 +49,16 @@ else
 fi
 
 # Pull required model
-echo "📦 Ensuring llama3:8b model is available..."
-if ollama list | grep -q "llama3:8b"; then
-    echo "✅ llama3:8b model already available"
+echo "📦 Ensuring $OLLAMA_MODEL model is available..."
+if ollama list | grep -q "$OLLAMA_MODEL"; then
+    echo "✅ $OLLAMA_MODEL model already available"
 else
-    echo "⬇️ Pulling llama3:8b model (this may take a while)..."
-    ollama pull llama3:8b
+    echo "⬇️ Pulling $OLLAMA_MODEL model (this may take a while)..."
+    ollama pull $OLLAMA_MODEL
     if [ $? -eq 0 ]; then
-        echo "✅ llama3:8b model downloaded successfully"
+        echo "✅ $OLLAMA_MODEL model downloaded successfully"
     else
-        echo "❌ Failed to download llama3:8b model"
+        echo "❌ Failed to download $OLLAMA_MODEL model"
         exit 1
     fi
 fi

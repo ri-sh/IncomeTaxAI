@@ -12,6 +12,8 @@ import json
 import pandas as pd
 
 from llama_index.llms.ollama import Ollama
+from django.conf import settings
+
 
 from .pdf_extractor import extract_pdf_text
 from .excel_extractor import extract_excel_text
@@ -20,6 +22,7 @@ from .regex_extractor import (
     extract_bank_interest_regex,
     extract_capital_gains_regex,
     extract_form16_quarterly_data_regex,
+    extract_form16_tds_regex,
     extract_payslip_regex,
     preprocess_bank_interest_certificate_text,
 )
@@ -78,6 +81,12 @@ class OllamaExtractedData:
     nps_employer_contribution: float = 0.0
     health_insurance: float = 0.0
     accrued_interest: float = 0.0
+    # ESOP/ESPP fields
+    esop_perquisite_value: float = 0.0
+    esop_exercise_price: float = 0.0
+    esop_fmv: float = 0.0
+    esop_shares: int = 0
+    esop_gain_per_share: float = 0.0
     raw_text: str = ""
     extraction_method: str = "ollama_llm"
     errors: Optional[list] = None
@@ -99,10 +108,11 @@ class OllamaExtractedData:
             elif not hasattr(self, field.name):
                 setattr(self, field.name, field.default)
 
+
 class OllamaDocumentAnalyzer:
 
-    def __init__(self, model: str = "llama3:8b"):
-        self.model_name = model
+    def __init__(self):
+        self.model_name = settings.OLLAMA_MODEL
         self.logger = logging.getLogger(__name__)
         self.llm = self._setup_ollama(model_name=self.model_name)
         self.post_processing_functions = {
@@ -113,43 +123,32 @@ class OllamaDocumentAnalyzer:
         }
 
     def _setup_ollama(self, model_name: str):
+        self.logger.info(f"Setting up Ollama with model: {model_name}")
+        base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        self.logger.info(f"Using Ollama base URL: {base_url}")
+
         for i in range(3):
             try:
-                # Try host.docker.internal first (for Docker), then localhost (for native)
-                base_urls = [
-                    os.environ.get("OLLAMA_BASE_URL", "http://host.docker.internal:11434"),
-                    "http://localhost:11434"
-                ]
-                
-                ollama_llm = None
-                for base_url in base_urls:
-                    try:
-                        ollama_llm = Ollama(
-                            model=model_name,
-                            base_url=base_url,
-                            request_timeout=90.0,  # Reduced to 90 seconds to prevent hanging
-                            temperature=0.0,
-                            context_window=8192,
-                            num_predict=2048
-                        )
-                        # Test the connection
-                        ollama_llm.complete("test")
-                        self.logger.info(f"Connected to Ollama at {base_url}")
-                        break
-                    except Exception as e:
-                        self.logger.warning(f"Failed to connect to Ollama at {base_url}: {e}")
-                        continue
-                
-                if not ollama_llm:
-                    raise Exception("Could not connect to Ollama at any URL")
-                
-                self.logger.info(f"Ollama LLM ({model_name}) ready for document analysis.")
+                ollama_llm = Ollama(
+                    model=model_name,
+                    base_url=base_url,
+                    request_timeout=90.0,
+                    temperature=0.0,
+                    context_window=8192,
+                    num_predict=2048
+                )
+                # Test the connection
+                self.logger.info("Testing Ollama connection...")
+                ollama_llm.complete("test")
+                self.logger.info(f"Successfully connected to Ollama at {base_url}")
                 return ollama_llm
-                    
             except Exception as e:
-                self.logger.warning(f"Could not setup Ollama with model {model_name} on attempt {i+1}: {e}")
+                self.logger.warning(f"Failed to connect to Ollama on attempt {i+1}: {e}")
                 if i < 2:
-                    time.sleep(5)  # Reduced wait time
+                    self.logger.info("Retrying in 5 seconds...")
+                    time.sleep(5)
+        
+        self.logger.error("Could not connect to Ollama after multiple attempts.")
         return None
     
     def analyze_document(self, file_path):
@@ -382,6 +381,19 @@ class OllamaDocumentAnalyzer:
                     json_data.update(quarterly_data)
                 else:
                     print(f"✅ Current totals are accurate, keeping as-is")
+            
+            # Additional TDS extraction fallback if tax_deducted is still 0
+            current_tax = json_data.get("tax_deducted", 0)
+            if current_tax == 0:
+                print("🔍 TDS is 0, attempting regex TDS extraction as fallback...")
+                raw_text = json_data.get("raw_text", "")
+                regex_tds = extract_form16_tds_regex(raw_text)
+                if regex_tds > 0:
+                    print(f"🔄 Using regex-extracted TDS: ₹{regex_tds:,.2f}")
+                    json_data["tax_deducted"] = regex_tds
+                    json_data["extraction_method"] = "ollama_llm_with_tds_regex_fallback"
+                else:
+                    print("⚠️ No TDS found even with regex fallback")
                 
                 if float(json_data.get("total_gross_salary", 0) or 0) == 0 and float(json_data.get("gross_salary", 0) or 0) > 0:
                     json_data["total_gross_salary"] = float(json_data.get("gross_salary", 0) or 0)

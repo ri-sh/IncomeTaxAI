@@ -354,7 +354,7 @@ def _generate_final_summary(session, completed_docs):
         )
         
         new_regime_deductions = DeductionCalculator.calculate_new_regime_deductions(
-            standard_deduction=50000  # Using ₹50K for FY 2024-25 (updated to ₹75K in some cases)
+            standard_deduction=75000  # Using ₹75K for FY 2024-25 as per Budget 2024
         )
         
         # Use the comprehensive tax calculator for regime comparison
@@ -629,7 +629,7 @@ def process_session_analysis_distributed(self, session_id):
             )
             
             new_regime_deductions = DeductionCalculator.calculate_new_regime_deductions(
-                standard_deduction=50000  # Using ₹50K for FY 2024-25
+                standard_deduction=75000  # Using ₹75K for FY 2024-25 as per Budget 2024
             )
             
             # Use the comprehensive tax calculator for regime comparison (distributed version)

@@ -167,6 +167,28 @@ Total 100000.00 5000.00 100.00 510.00""",
             return _create_structured_prompt_with_example(doc_type, schema, text_content,
                 example_text="""NPS Transaction Statement\nFor the Financial Year 2024-25\n\nContribution Details\nBy Voluntary Contributions 50000.00\nTotal Contribution 250000.00""",
                 example_json="""{\n  \"nps_tier1_contribution\": 250000.00,\n  \"nps_80ccd1b\": 50000.00,\n  \"nps_employer_contribution\": 0.00,\n  \"financial_year\": \"2024-25\"\n}""" ), schema
+        elif doc_type == "form_16":
+            return _create_structured_prompt_with_example(doc_type, schema, text_content,
+                example_text="""FORM 16
+CERTIFICATE UNDER SECTION 203
+XYZ COMPANY LIMITED
+Employee Name: SAMPLE EMPLOYEE
+PAN: SAMPLEF1234
+
+PART A - DETAILS OF SALARY PAID
+Financial Year: 2024-25
+Gross Salary: ₹12,00,000
+Value of perquisites under section 17(2): ₹50,000
+
+Monthly Tax Deduction Details:
+April 2024: Salary ₹1,00,000 Tax Deducted ₹8,000
+May 2024: Salary ₹1,00,000 Tax Deducted ₹8,000
+...
+Total tax deducted and deposited with Central Government: ₹96,000
+
+PART B - DETAILS OF TAX DEDUCTED
+Tax payable on total income: ₹96,000""",
+                example_json="""{\n  \"employee_name\": \"SAMPLE EMPLOYEE\",\n  \"pan\": \"SAMPLEF1234\",\n  \"employer_name\": \"XYZ COMPANY LIMITED\",\n  \"gross_salary\": 1200000.0,\n  \"tax_deducted\": 96000.0,\n  \"perquisites\": 50000.0,\n  \"financial_year\": \"2024-25\"\n}""" ), schema
         else:
             return _create_structured_prompt(doc_type, schema, text_content), schema
 
@@ -182,7 +204,7 @@ def _create_structured_prompt(doc_type: str, schema, text_content: str):
         **SALARY EXTRACTION:**
         - **gross_salary/total_gross_salary:** Look for "Gross Salary" OR "Income chargeable under the head 'Salaries'" in Part B
         - **basic_salary:** Look for "Salary as per provisions contained in section 17(1)"
-        - **perquisites:** Look for "Value of perquisites under section 17(2)"
+        - **perquisites:** Look for "Value of perquisites under section 17(2)" - this includes ESOP/ESPP gains, stock options, and other benefits
         - **hra_received:** Look for "House rent allowance" under allowances section
         
         **TAX & DEDUCTIONS:**
@@ -272,9 +294,48 @@ def _create_structured_prompt_with_example(doc_type: str, schema, text_content: 
         specific_instructions = f"""
         For Form 16 documents, extract all relevant financial figures.
         - **Gross Salary:** Look for "Gross Salary" or "Income chargeable under the head 'Salaries'" in Part B. If multiple salary figures are present, prioritize the total gross salary for the financial year.
-        - **Tax Deducted:** Find the "Tax payable" or "Total tax deducted" amount.
+        - **Tax Deducted (TDS) - STEP-BY-STEP GUIDE:**
+          
+          **STEP 1: Look for Common TDS Phrases**
+          Search for these COMMON phrases in Form16 and extract numbers near them:
+          • "Tax deducted and deposited" (usually in Part A)
+          • "Total tax deducted" or "Tax deducted at source"
+          • "Amount of tax deducted" in tables
+          • "Tax payable" (but verify it's TDS, not total tax liability)
+          • Lines containing both "tax" and "deducted" together
+          
+          **STEP 2: Check Monthly/Quarterly TDS Tables**
+          Look for tables with columns like:
+          | Month | Salary | Tax Deducted |
+          |-------|---------|--------------|
+          | Apr   | 500000  | 45000       |
+          | May   | 500000  | 45000       |
+          If found, ADD UP all "Tax Deducted" amounts.
+          
+          **STEP 3: Search Part A Section**
+          In "Part A - Details of Salary Paid", look for:
+          • Any line containing "tax deducted" followed by a number
+          • Pattern: "₹[digits with commas]" near words "tax", "deducted", "TDS"
+          
+          **STEP 4: If No Direct Amount, Calculate**
+          Look for:
+          • "Tax payable on total income: ₹[X]"
+          • "Tax payable after rebate: ₹[Y]" 
+          • TDS = X - Y (if both found)
+          
+          **STEP 5: Validation**
+          • TDS amount should be POSITIVE and reasonable (not 0 for substantial salaries)
+          • TDS is typically 10-30% of gross salary depending on income level
+          • If you find 0 for high salaries, re-examine document carefully
+          • TDS amounts are usually 5-7 digit numbers for salaried employees
+          
+          **EXTRACTION PATTERNS TO MATCH:**
+          - Numbers with commas: "₹15,50,000" → extract 1550000
+          - Without rupee symbol: "15,50,000" → extract 1550000  
+          - With decimal: "15,50,000.00" → extract 1550000
+          - In parentheses: "(15,50,000)" → extract 1550000
         - **Deductions (Chapter VI-A):** Extract amounts for 80C, 80CCD(1B), 80D, etc. Look for sections like "Deductions under Chapter VI-A". Sum up all applicable deductions.
-        - **Perquisites:** Extract from "Value of perquisites under section 17(2)".
+        - **Perquisites:** Extract from "Value of perquisites under section 17(2)" - commonly includes ESOP/ESPP stock option gains, company car benefits, etc.
         - **Employee/Employer Details:** Extract Employee Name, PAN, Employer Name, Employer TAN.
         - If a specific field is not found, return 0.0 for numeric values and "" for strings.
         """

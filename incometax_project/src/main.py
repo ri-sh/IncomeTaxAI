@@ -29,12 +29,12 @@ from src.core.document_processing.document_processor import DocumentProcessor
 # Top-level function for multiprocessing
 def _analyze_document_wrapper(args) -> Optional[OllamaExtractedData]:
     """Wrapper function to analyze a single document for multiprocessing."""
-    file_path, analyzer_class_name, model_name = args
+    file_path, analyzer_class_name = args
     file_name = Path(file_path).name
     print(f"🔍 Worker analyzing: {file_name}")
     try:
         if analyzer_class_name == 'OllamaDocumentAnalyzer':
-            analyzer = OllamaDocumentAnalyzer(model=model_name)
+            analyzer = OllamaDocumentAnalyzer()
         
         result = analyzer.analyze_document(file_path)
         if result:

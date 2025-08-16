@@ -66,6 +66,7 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL}
     volumes:
       - ./media:/app/media
       - ./static:/app/static
@@ -90,6 +91,7 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL}
     volumes:
       - ./media:/app/media
     depends_on:
@@ -118,6 +120,7 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL}
     volumes:
       - ./media:/app/media
     depends_on:
@@ -144,6 +147,7 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL}
     volumes:
       - ./media:/app/media
     depends_on:
@@ -162,19 +166,15 @@ services:
   celery-beat:
     build: .
     restart: unless-stopped
-    environment:
-      - DEBUG=False
-      - SECRET_KEY=your-super-secret-key-change-this-in-production
-      - DATABASE_URL=postgresql://incometax_user:incometax_password@db:5432/incometax_db
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    env_file:
+      - .env
     volumes:
       - ./media:/app/media
     depends_on:
-      - db
-      - redis
-    command: celery -A incometax_project beat --loglevel=info
+      - web
+    command: >
+      sh -c "rm -f /app/celerybeat.pid &&
+             celery -A incometax_project beat --loglevel=info --pidfile=/app/celerybeat.pid"
 
   # Celery Flower for monitoring (optional)
   flower:
