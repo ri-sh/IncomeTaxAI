@@ -189,6 +189,21 @@ Total tax deducted and deposited with Central Government: ₹96,000
 PART B - DETAILS OF TAX DEDUCTED
 Tax payable on total income: ₹96,000""",
                 example_json="""{\n  \"employee_name\": \"SAMPLE EMPLOYEE\",\n  \"pan\": \"SAMPLEF1234\",\n  \"employer_name\": \"XYZ COMPANY LIMITED\",\n  \"gross_salary\": 1200000.0,\n  \"tax_deducted\": 96000.0,\n  \"perquisites\": 50000.0,\n  \"financial_year\": \"2024-25\"\n}""" ), schema
+        elif doc_type == "mutual_fund_elss_statement":
+            return _create_structured_prompt_with_example(doc_type, schema, text_content,
+                example_text="""Tax Investment Confirmation
+Name: SAMPLE NAME
+PAN: SAMPLE1234P
+Financial Year: FY 2024-25
+Total amount invested in ELSS is RS 120000
+
+S no. Mutual Fund Transaction Date Amount(INR)
+1 Xyz ELSS Tax Saver Fund Direct Plan Growth DD MM YYY  30000 
+2 ABcd ELSS Tax Saver Fund Direct Growth DD MM YYY      60000
+3 Quant ELSS Tax Saver Fund Direct Growth DD MM YYY     30000
+
+As stated in the offer document, the investments are eligible for Tax benefit u/s 80C as per the Income Tax laws.""",
+                example_json="""{\n  \"elss_amount\": 120000.05,\n  \"total_investment\": 120000.05,\n  \"fund_name\": \"Multiple ELSS Funds\",\n  \"financial_year\": \"2024-25\"\n}""" ), schema
         else:
             return _create_structured_prompt(doc_type, schema, text_content), schema
 

@@ -213,7 +213,7 @@ class OllamaDocumentAnalyzer:
             # Normalize doc_type to match internal schema keys (still useful for other types)
             if doc_type.lower() == "interest certificate":
                 doc_type = "bank_interest_certificate"
-            elif doc_type.lower() == "tax investment confirmation":
+            elif doc_type.lower() in ["tax investment confirmation", "investment confirmation", "investment"]:
                 doc_type = "investment"
             elif doc_type.lower() == "nps transaction statement":
                 doc_type = "nps_statement"
@@ -229,6 +229,13 @@ class OllamaDocumentAnalyzer:
                 doc_type = "form_16"
             elif doc_type.lower() == "document" and "form16" in file_path.name.lower():
                 doc_type = "form_16" # This line becomes redundant but harmless
+            
+            # Enhanced filename-based classification for ELSS and NPS documents
+            filename_lower = file_path.name.lower()
+            if doc_type in ["unknown", "document"] and any(keyword in filename_lower for keyword in ["elss", "mutual_funds_elss", "mutual fund elss"]):
+                doc_type = "mutual_fund_elss_statement"
+            elif doc_type in ["unknown", "document"] and "nps" in filename_lower:
+                doc_type = "nps_statement"
 
             prompt, schema = _get_prompt_and_schema(doc_type, structured_text_content)
             try:
@@ -442,15 +449,25 @@ class OllamaDocumentAnalyzer:
                 
                 for col in processed_df.columns:
                     col_lower = str(col).lower()
-                    # Exact matching for cleaned column names from excel_extractor
-                    if 'short_term_capital_gain' == col_lower: # Corrected: added underscore # Corrected: added underscore
-                        stcg += pd.to_numeric(processed_df[col], errors='coerce').sum()
-                    if 'long_term_capital_gain' == col_lower: # Corrected: added underscore
-                        ltcg += pd.to_numeric(processed_df[col], errors='coerce').sum()
-                    # For 'realised_pl' from stocks
-                    if 'realised_pl' == col_lower: # Exact match for stocks
+                    # Enhanced pattern matching for capital gains columns
+                    if any(term in col_lower for term in ['short_term_capital_gain', 'stcg', 'short_term_pl', 'short_term_p&l']):
+                        col_sum = pd.to_numeric(processed_df[col], errors='coerce').sum()
+                        stcg += col_sum
+                        print(f"📊 Added STCG from column '{col}': ₹{col_sum:,.2f}")
+                    elif any(term in col_lower for term in ['long_term_capital_gain', 'ltcg', 'long_term_pl', 'long_term_p&l']):
+                        col_sum = pd.to_numeric(processed_df[col], errors='coerce').sum()
+                        ltcg += col_sum
+                        print(f"📊 Added LTCG from column '{col}': ₹{col_sum:,.2f}")
+                    elif 'realised_pl' == col_lower or 'realized_pl' == col_lower:
                         # Add Realised_PL to LTCG as a general capital gain
-                        ltcg += pd.to_numeric(processed_df[col], errors='coerce').sum()
+                        col_sum = pd.to_numeric(processed_df[col], errors='coerce').sum()
+                        ltcg += col_sum
+                        print(f"📊 Added Realised P&L to LTCG from column '{col}': ₹{col_sum:,.2f}")
+                    elif any(term in col_lower for term in ['capital_gain', 'capital_loss', 'total_pl', 'net_pl']):
+                        # General capital gains/losses - add to LTCG by default
+                        col_sum = pd.to_numeric(processed_df[col], errors='coerce').sum()
+                        ltcg += col_sum
+                        print(f"📊 Added general capital gain to LTCG from column '{col}': ₹{col_sum:,.2f}")
 
                 # If values were extracted from specific columns, use them
                 # Prioritize values from DataFrame if extracted, otherwise use Ollama's
@@ -471,9 +488,23 @@ class OllamaDocumentAnalyzer:
 
     def _extract_elss_investments(self, raw_text: str) -> float:
         try:
-            match = re.search(r"Total amount invested in ELSS is RS ([\\d,]+\\.?\\d*)", raw_text, re.IGNORECASE)
-            if match:
-                return float(match.group(1).replace(',',''))
+            # Enhanced ELSS patterns for better extraction
+            elss_patterns = [
+                r"Total amount invested in ELSS is RS ([\d,]+\.?\d*)",
+                r"ELSS investment[\s\S]*?([\d,]+\.?\d*)",
+                r"Equity Linked Savings Scheme[\s\S]*?([\d,]+\.?\d*)",
+                r"ELSS mutual fund[\s\S]*?([\d,]+\.?\d*)",
+                r"Section 80C.*?ELSS[\s\S]*?([\d,]+\.?\d*)",
+                r"Total investment.*?ELSS[\s\S]*?([\d,]+\.?\d*)"
+            ]
+            
+            for pattern in elss_patterns:
+                match = re.search(pattern, raw_text, re.IGNORECASE)
+                if match:
+                    amount = float(match.group(1).replace(',',''))
+                    print(f"✅ Found ELSS investment: ₹{amount:,.0f} using pattern: {pattern[:30]}...")
+                    return amount
+                    
             return 0.0
         except Exception as e:
             self.logger.error(f"Error extracting ELSS investments: {e}")
@@ -481,9 +512,23 @@ class OllamaDocumentAnalyzer:
 
     def _extract_nps_investments(self, raw_text: str) -> float:
         try:
-            match = re.search(r"By Voluntary Contributions\s*([\\d,]+\.?\\d*)", raw_text, re.IGNORECASE)
-            if match:
-                return float(match.group(1).replace(',',''))
+            # Enhanced NPS patterns for better extraction
+            nps_patterns = [
+                r"By Voluntary Contributions[\s\S]*?([\d,]+\.?\d*)",
+                r"Additional NPS contribution[\s\S]*?([\d,]+\.?\d*)",
+                r"80CCD\(1B\)[\s\S]*?([\d,]+\.?\d*)",
+                r"NPS Tier.*?II[\s\S]*?([\d,]+\.?\d*)",
+                r"National Pension System.*?voluntary[\s\S]*?([\d,]+\.?\d*)",
+                r"Tier.*?I.*?contribution[\s\S]*?([\d,]+\.?\d*)"
+            ]
+            
+            for pattern in nps_patterns:
+                match = re.search(pattern, raw_text, re.IGNORECASE)
+                if match:
+                    amount = float(match.group(1).replace(',',''))
+                    print(f"✅ Found NPS investment: ₹{amount:,.0f} using pattern: {pattern[:30]}...")
+                    return amount
+                    
             return 0.0
         except Exception as e:
             self.logger.error(f"Error extracting NPS investments: {e}")

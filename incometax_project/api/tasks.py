@@ -7,7 +7,7 @@ from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from src.main import IncomeTaxAssistant
 from src.core.document_processing.ollama_analyzer import OllamaDocumentAnalyzer
-from api.utils.tax_calculator import IncomeTaxCalculator, DeductionCalculator
+from api.utils.tax_engine import IncomeTaxCalculator, DeductionCalculator
 import dataclasses
 import os
 import gc
@@ -78,7 +78,7 @@ def _convert_ollama_data_to_expected_format(ollama_data, filename):
                 "total_gains": ollama_data.total_capital_gains,
                 "long_term_capital_gains": ollama_data.long_term_capital_gains,
                 "short_term_capital_gains": ollama_data.short_term_capital_gains,
-                "dividend_income": 13427.85  # For now use the known value, later extract from document
+                "dividend_income": getattr(ollama_data, 'dividend_income', 0.0)  # Extract from actual document, don't assume
             }
         }
     elif mapped_doc_type == 'mutual_fund_elss_statement':
@@ -342,7 +342,7 @@ def _generate_final_summary(session, completed_docs):
         total_other_income = bank_interest + dividend_income
         gross_total_income = total_salary_income + total_other_income
         
-        # Calculate deductions using utility classes
+        # Calculate deductions using enhanced utility classes with all parameters
         old_regime_deductions = DeductionCalculator.calculate_old_regime_deductions(
             hra_received=hra_received,
             basic_salary=basic_and_allowances,  # Use as basic salary approximation
@@ -350,7 +350,16 @@ def _generate_final_summary(session, completed_docs):
             employee_pf=employee_pf,
             nps_additional=nps_80ccd_1b,
             professional_tax=professional_tax_extracted if professional_tax_extracted > 0 else 0,
-            standard_deduction=50000
+            standard_deduction=50000,
+            rent_paid=None,  # Will use enhanced estimation if HRA received but no rent data
+            health_insurance_premium=0,  # Can be enhanced later from document analysis
+            parents_health_insurance=0,  # Can be enhanced later from document analysis  
+            charitable_donations=0,  # Can be enhanced later from document analysis
+            charity_type='50_percent',
+            education_loan_interest=0,  # Can be enhanced later from document analysis
+            loan_year=1,
+            savings_interest=bank_interest,  # Pass bank interest for Section 80TTA/TTB calculation
+            age_above_60=False  # Can be enhanced later from document analysis
         )
         
         new_regime_deductions = DeductionCalculator.calculate_new_regime_deductions(
@@ -414,7 +423,8 @@ def _generate_final_summary(session, completed_docs):
                 "health_education_cess": old_regime_calc['cess'],
                 "total_tax_liability": old_regime_calc['total_liability'],
                 "tds_paid": old_regime_payment['tds_paid'],
-                "refund_due": old_regime_payment['refund_due']
+                "refund_due": old_regime_payment['refund_due'],
+                "additional_tax_payable": old_regime_payment['additional_tax_payable']
             },
             
             "tax_calculation_new_regime": {
@@ -424,6 +434,7 @@ def _generate_final_summary(session, completed_docs):
                 "health_education_cess": new_regime_calc['cess'],
                 "total_tax_liability": new_regime_calc['total_liability'],
                 "tds_paid": new_regime_payment['tds_paid'],
+                "refund_due": new_regime_payment['refund_due'],
                 "additional_tax_payable": new_regime_payment['additional_tax_payable']
             },
             
@@ -617,7 +628,7 @@ def process_session_analysis_distributed(self, session_id):
             total_other_income = bank_interest + dividend_income
             gross_total_income = total_salary_income + total_other_income
             
-            # Calculate deductions using utility classes (distributed version)
+            # Calculate deductions using enhanced utility classes with all parameters (distributed version)
             old_regime_deductions = DeductionCalculator.calculate_old_regime_deductions(
                 hra_received=hra_received,
                 basic_salary=basic_and_allowances,  # Use as basic salary approximation
@@ -625,7 +636,16 @@ def process_session_analysis_distributed(self, session_id):
                 employee_pf=employee_pf,
                 nps_additional=nps_80ccd_1b,
                 professional_tax=professional_tax_extracted if professional_tax_extracted > 0 else 0,
-                standard_deduction=50000
+                standard_deduction=50000,
+                rent_paid=None,  # Will use enhanced estimation if HRA received but no rent data
+                health_insurance_premium=0,  # Can be enhanced later from document analysis
+                parents_health_insurance=0,  # Can be enhanced later from document analysis  
+                charitable_donations=0,  # Can be enhanced later from document analysis
+                charity_type='50_percent',
+                education_loan_interest=0,  # Can be enhanced later from document analysis
+                loan_year=1,
+                savings_interest=bank_interest,  # Pass bank interest for Section 80TTA/TTB calculation
+                age_above_60=False  # Can be enhanced later from document analysis
             )
             
             new_regime_deductions = DeductionCalculator.calculate_new_regime_deductions(
@@ -685,7 +705,8 @@ def process_session_analysis_distributed(self, session_id):
                     "health_education_cess": old_regime_calc['cess'],
                     "total_tax_liability": old_regime_calc['total_liability'],
                     "tds_paid": old_regime_payment['tds_paid'],
-                    "refund_due": old_regime_payment['refund_due']
+                    "refund_due": old_regime_payment['refund_due'],
+                    "additional_tax_payable": old_regime_payment['additional_tax_payable']
                 },
                 
                 "tax_calculation_new_regime": {
@@ -695,6 +716,7 @@ def process_session_analysis_distributed(self, session_id):
                     "health_education_cess": new_regime_calc['cess'],
                     "total_tax_liability": new_regime_calc['total_liability'],
                     "tds_paid": new_regime_payment['tds_paid'],
+                    "refund_due": new_regime_payment['refund_due'],
                     "additional_tax_payable": new_regime_payment['additional_tax_payable']
                 },
                 

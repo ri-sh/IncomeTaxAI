@@ -23,7 +23,7 @@ import concurrent.futures
 sys.path.append(str(Path(__file__).parent.parent))
 
 from src.core.document_processing.ollama_analyzer import OllamaDocumentAnalyzer, OllamaExtractedData
-from src.core.tax_calculator import TaxCalculator
+from api.utils.tax_engine import IncomeTaxCalculator
 from src.core.document_processing.document_processor import DocumentProcessor   
 
 # Top-level function for multiprocessing
@@ -56,7 +56,7 @@ class IncomeTaxAssistant:
         self.document_analyzer = analyzer
         self.document_processor = DocumentProcessor()
         self.financial_year = financial_year
-        self.tax_calculator = TaxCalculator(financial_year)
+        self.tax_calculator = IncomeTaxCalculator()
         
         # Analysis results storage
         self.analyzed_documents: List[Any] = []

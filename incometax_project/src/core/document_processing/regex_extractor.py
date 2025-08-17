@@ -36,14 +36,32 @@ def extract_form16_perquisites_regex(json_data):
         # Additional patterns for HRA and deductions based on actual Form16 format
         hra_pattern = r"House rent allowance under section 10\(13A\)[\s\S]*?([\d,]+\.?\d*)"
         professional_tax_pattern = r"Tax on employment under section 16\(iii\)[\s\S]*?([\d,]+\.?\d*)"
-        epf_pattern = r"contributions to provident fund etc\. under section 80C[\s\S]*?([\d,]+\.?\d*)"
+        
+        # Enhanced EPF patterns to catch various formats
+        epf_patterns = [
+            r"contributions to provident fund etc\. under section 80C[\s\S]*?([\d,]+\.?\d*)",
+            r"Employee Provident Fund[\s\S]*?([\d,]+\.?\d*)",
+            r"Provident Fund contribution[\s\S]*?([\d,]+\.?\d*)",
+            r"EPF contribution[\s\S]*?([\d,]+\.?\d*)",
+            r"PF deduction[\s\S]*?([\d,]+\.?\d*)",
+            r"Employees Provident Fund[\s\S]*?([\d,]+\.?\d*)",
+            r"section 80C.*?provident fund[\s\S]*?([\d,]+\.?\d*)",
+            r"Deduction under section 16.*?provident fund[\s\S]*?([\d,]+\.?\d*)"
+        ]
 
         basic_match = re.search(basic_salary_pattern, raw_text, re.IGNORECASE)
         perquisites_match = re.search(perquisites_pattern, raw_text, re.IGNORECASE)
         total_gross_match = re.search(total_gross_salary_pattern, raw_text, re.IGNORECASE | re.DOTALL)
         hra_match = re.search(hra_pattern, raw_text, re.IGNORECASE)
         professional_tax_match = re.search(professional_tax_pattern, raw_text, re.IGNORECASE)
-        epf_match = re.search(epf_pattern, raw_text, re.IGNORECASE)
+        
+        # Try multiple EPF patterns
+        epf_match = None
+        for epf_pattern in epf_patterns:
+            epf_match = re.search(epf_pattern, raw_text, re.IGNORECASE)
+            if epf_match:
+                print(f"✅ Found EPF using pattern: {epf_pattern[:50]}...")
+                break
 
         if basic_match and perquisites_match and total_gross_match:
             basic_salary = float(basic_match.group(1).replace(',', ''))
