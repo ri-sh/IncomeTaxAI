@@ -16,13 +16,12 @@ echo "✅ Railway CLI found"
 # Check if user is logged in
 if ! railway whoami &> /dev/null; then
     echo "🔐 Please login to Railway:"
-    railway login
+    railway login --browserless
 fi
 
 echo "✅ Railway authentication verified"
 
-# Create Railway project if it doesn't exist
-echo "📦 Setting up Railway project..."
+# Ensure railway.toml exists
 if [ ! -f "railway.toml" ]; then
     echo "❌ railway.toml not found. Please run this from the project root."
     exit 1
@@ -30,7 +29,7 @@ fi
 
 # Initialize Railway project
 echo "🎯 Initializing Railway project..."
-railway login
+railway login --browserless
 
 # Link to existing project or create new one
 echo "🔗 Linking to Railway project..."
@@ -56,24 +55,24 @@ esac
 
 # Add PostgreSQL service
 echo "🗄️ Adding PostgreSQL database..."
-railway add postgresql
+railway add --database postgres
 
 # Add Redis service  
 echo "🔴 Adding Redis cache..."
-railway add redis
+railway add --database redis
 
 # Set environment variables
 echo "⚙️ Setting up environment variables..."
 
 # Core Django settings
-railway variables set DEBUG=False
-railway variables set SECRET_KEY="$(openssl rand -base64 32)"
-railway variables set ALLOWED_HOSTS="*.railway.app,*.up.railway.app"
-railway variables set CSRF_TRUSTED_ORIGINS="https://*.railway.app,https://*.up.railway.app"
+railway variables set DEBUG False
+railway variables set SECRET_KEY "$(openssl rand -base64 32)"
+railway variables set ALLOWED_HOSTS "*.railway.app,*.up.railway.app"
+railway variables set CSRF_TRUSTED_ORIGINS "https://*.railway.app,https://*.up.railway.app"
 
 # Privacy Engine settings
-railway variables set PRIVACY_ENGINE_ENABLED=true
-railway variables set ENCRYPTION_SALT="$(openssl rand -base64 32)"
+railway variables set PRIVACY_ENGINE_ENABLED true
+railway variables set ENCRYPTION_SALT "$(openssl rand -base64 32)"
 
 # Ollama service setup
 echo "🤖 Setting up Ollama service..."
@@ -86,38 +85,28 @@ read -p "Enter choice (1, 2, or 3): " ollama_choice
 case $ollama_choice in
     1)
         echo "🚀 Deploying Ollama service on Railway..."
-        # Deploy Ollama using Railway template
         railway add --template ollama
         echo "⏳ Waiting for Ollama service to deploy..."
         sleep 30
-        
-        # Get Ollama service URL
+
         OLLAMA_URL=$(railway url --service ollama 2>/dev/null || echo "")
         if [ -n "$OLLAMA_URL" ]; then
-            railway variables set OLLAMA_BASE_URL="$OLLAMA_URL"
+            railway variables set OLLAMA_BASE_URL "$OLLAMA_URL"
             echo "✅ Ollama service configured: $OLLAMA_URL"
         else
-            echo "⚠️  Please manually set OLLAMA_BASE_URL after Ollama service is ready"
-            echo "   railway variables set OLLAMA_BASE_URL=https://your-ollama-service.railway.app"
+            echo "⚠️ Please manually set OLLAMA_BASE_URL after Ollama service is ready"
         fi
-        railway variables set OLLAMA_MODEL=qwen2.5:3b
+        railway variables set OLLAMA_MODEL "qwen2.5:3b"
         ;;
     2)
         echo "🌐 Configuring external Ollama API..."
         read -p "Enter your Ollama API URL (e.g., https://your-server.com:11434): " external_ollama_url
-        railway variables set OLLAMA_BASE_URL="$external_ollama_url"
-        railway variables set OLLAMA_MODEL=qwen2.5:3b
+        railway variables set OLLAMA_BASE_URL "$external_ollama_url"
+        railway variables set OLLAMA_MODEL "qwen2.5:3b"
         echo "✅ External Ollama configured: $external_ollama_url"
         ;;
     3)
-        echo "⚠️  IMPORTANT: Configure Ollama manually after deployment:"
-        echo "   For Railway Ollama service:"
-        echo "   railway add --template ollama"
-        echo "   railway variables set OLLAMA_BASE_URL=https://your-ollama-service.railway.app"
-        echo "   "
-        echo "   For external Ollama:"
-        echo "   railway variables set OLLAMA_BASE_URL=https://your-ollama-server.com:11434"
-        echo "   railway variables set OLLAMA_MODEL=qwen2.5:3b"
+        echo "⚠️ IMPORTANT: Configure Ollama manually after deployment."
         ;;
     *)
         echo "❌ Invalid choice, skipping Ollama configuration"
@@ -125,9 +114,9 @@ case $ollama_choice in
 esac
 
 # Security settings
-railway variables set SECURE_SSL_REDIRECT=True
-railway variables set SESSION_COOKIE_SECURE=True
-railway variables set CSRF_COOKIE_SECURE=True
+railway variables set SECURE_SSL_REDIRECT True
+railway variables set SESSION_COOKIE_SECURE True
+railway variables set CSRF_COOKIE_SECURE True
 
 # Deploy to Railway
 echo "🚀 Deploying to Railway..."
@@ -151,10 +140,9 @@ echo "   🔴 Cache: Redis (auto-configured)"
 echo "   🔒 Privacy Engine: Enabled with encryption"
 echo ""
 echo "🔧 Next Steps:"
-echo "1. Set up Ollama service (separate Railway project or external)"
-echo "2. Configure OLLAMA_BASE_URL environment variable"
-echo "3. Test the application at: $DEPLOYMENT_URL"
-echo "4. Monitor logs: railway logs"
+echo "1. Verify Ollama service (or external API) is working"
+echo "2. Test the application at: $DEPLOYMENT_URL"
+echo "3. Monitor logs: railway logs"
 echo ""
 echo "📊 Useful Railway Commands:"
 echo "   railway logs           # View application logs"
