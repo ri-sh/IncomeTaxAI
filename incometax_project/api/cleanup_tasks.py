@@ -9,8 +9,9 @@ from django.utils import timezone
 from celery import shared_task
 from documents.models import ProcessingSession, Document, AnalysisTask
 from django.conf import settings
+from api.utils.pii_logger import get_pii_safe_logger
 
-logger = logging.getLogger(__name__)
+logger = get_pii_safe_logger(__name__)
 
 @shared_task(bind=True)
 def cleanup_dead_sessions(self):
@@ -228,7 +229,8 @@ def validate_file_sessions():
                     logger.debug(f"Orphaned file (no DB entry): {relative_path}")
                 elif not ProcessingSession.objects.filter(id=file_document.session_id).exists():
                     stats['invalid_session_files'] += 1
-                    logger.warning(f"File with invalid session: {relative_path} (session: {file_document.session_id})")
+                    # Only log session ID, not the file path which may contain PII
+                    logger.warning(f"File with invalid session ID: {file_document.session_id}")
                 else:
                     stats['valid_files'] += 1
                     
@@ -259,7 +261,7 @@ def reset_stuck_documents(self):
             doc.status = Document.Status.UPLOADED  # Reset to uploaded for retry
             doc.save()
             reset_count += 1
-            logger.info(f"Reset stuck document: {doc.filename}")
+            logger.info_with_filename("Reset stuck document: {filename}", doc.filename)
         
         stuck_sessions = ProcessingSession.objects.filter(
             status=ProcessingSession.Status.PROCESSING,

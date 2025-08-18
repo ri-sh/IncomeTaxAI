@@ -1,8 +1,27 @@
-
 services:
   # NOTE: Ollama now runs natively on host for better performance
   # Start Ollama manually: ollama serve
   
+  # PostgreSQL database
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=incometax_db
+      - POSTGRES_USER=incometax_user
+      - POSTGRES_PASSWORD=incometax_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U incometax_user -d incometax_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - incometax_project_default
+
   # Redis service for Celery
   redis:
     image: redis:7-alpine
@@ -26,8 +45,9 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"
+    env_file: .env
     environment:
-      - DEBUG=False
+      - DEBUG=True
       - SECRET_KEY=your-super-secret-key-change-this-in-production
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
@@ -39,6 +59,8 @@ services:
       - ./media:/app/media
       - ./static:/app/static
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     command: >
@@ -52,18 +74,24 @@ services:
   celery:
     build: .
     restart: unless-stopped
+    env_file: .env
     environment:
-      - DEBUG=False
+      - DEBUG=True
       - SECRET_KEY=your-super-secret-key-change-this-in-production
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL}
+      - ENCRYPTION_SALT=${ENCRYPTION_SALT}
+      - PRIVACY_ENGINE_ENABLED=${PRIVACY_ENGINE_ENABLED}
+      - LOG_PII=${LOG_PII}
     volumes:
       - .:/app
       - ./media:/app/media
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     deploy:
@@ -72,7 +100,7 @@ services:
           memory: 4G
         reservations:
           memory: 2G
-    command: celery -A incometax_project worker --loglevel=debug --pool=solo --concurrency=1 --max-tasks-per-child=1
+    command: sh -c "sleep 10 && python manage.py migrate && celery -A incometax_project worker --loglevel=debug --pool=solo --concurrency=1 --max-tasks-per-child=1"
     networks:
       - incometax_project_default
     healthcheck:
@@ -85,18 +113,24 @@ services:
   celery2:
     build: .
     restart: unless-stopped
+    env_file: .env
     environment:
-      - DEBUG=False
+      - DEBUG=True
       - SECRET_KEY=your-super-secret-key-change-this-in-production
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL}
+      - ENCRYPTION_SALT=${ENCRYPTION_SALT}
+      - PRIVACY_ENGINE_ENABLED=${PRIVACY_ENGINE_ENABLED}
+      - LOG_PII=${LOG_PII}
     volumes:
       - .:/app
       - ./media:/app/media
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     deploy:
@@ -105,7 +139,7 @@ services:
           memory: 2G
         reservations:
           memory: 1G
-    command: celery -A incometax_project worker --loglevel=debug --pool=solo --concurrency=1 --max-tasks-per-child=1
+    command: sh -c "sleep 10 && python manage.py migrate && celery -A incometax_project worker --loglevel=debug --pool=solo --concurrency=1 --max-tasks-per-child=1"
     networks:
       - incometax_project_default
     healthcheck:
@@ -118,18 +152,24 @@ services:
   celery3:
     build: .
     restart: unless-stopped
+    env_file: .env
     environment:
-      - DEBUG=False
+      - DEBUG=True
       - SECRET_KEY=your-super-secret-key-change-this-in-production
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL}
+      - ENCRYPTION_SALT=${ENCRYPTION_SALT}
+      - PRIVACY_ENGINE_ENABLED=${PRIVACY_ENGINE_ENABLED}
+      - LOG_PII=${LOG_PII}
     volumes:
       - .:/app
       - ./media:/app/media
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     deploy:
@@ -138,11 +178,11 @@ services:
           memory: 2G
         reservations:
           memory: 1G
-    command: celery -A incometax_project worker --loglevel=debug --pool=solo --concurrency=1 --max-tasks-per-child=1
+    command: sh -c "sleep 10 && python manage.py migrate && celery -A incometax_project worker --loglevel=debug --pool=solo --concurrency=1 --max-tasks-per-child=1"
     networks:
       - incometax_project_default
     healthcheck:
-      test: ["CMD", "celery", "-A", "incometax_project", "inspect", "ping"]
+      test: ["CMD", "celery", "A", "incometax_project", "inspect", "ping"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -151,8 +191,9 @@ services:
   celery-beat:
     build: .
     restart: unless-stopped
+    env_file: .env
     environment:
-      - DEBUG=False
+      - DEBUG=True
       - SECRET_KEY=your-super-secret-key-change-this-in-production
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
@@ -161,6 +202,8 @@ services:
       - .:/app
       - ./media:/app/media
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     command: celery -A incometax_project beat --loglevel=info
@@ -173,13 +216,16 @@ services:
     restart: unless-stopped
     ports:
       - "5555:5555"
+    env_file: .env
     environment:
-      - DEBUG=False
+      - DEBUG=True
       - SECRET_KEY=your-super-secret-key-change-this-in-production
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     command: celery -A incometax_project flower --port=5555
@@ -191,5 +237,6 @@ networks:
     driver: bridge
 
 volumes:
+  postgres_data:
   redis_data:
   ollama_data:

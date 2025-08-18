@@ -8,6 +8,7 @@ from asgiref.sync import async_to_sync
 from src.main import IncomeTaxAssistant
 from src.core.document_processing.ollama_analyzer import OllamaDocumentAnalyzer
 from api.utils.tax_engine import IncomeTaxCalculator, DeductionCalculator
+from api.utils.pii_logger import get_pii_safe_logger, log_document_processing, log_document_error
 import dataclasses
 import os
 import gc
@@ -15,6 +16,8 @@ import tempfile
 import shutil
 import time
 from django.utils import timezone
+from django.conf import settings  
+from contextlib import contextmanager
 
 def _convert_ollama_data_to_expected_format(ollama_data, filename):
     """Convert OllamaExtractedData to our expected format"""
@@ -110,7 +113,7 @@ def _convert_ollama_data_to_expected_format(ollama_data, filename):
         }
 
 @shared_task(bind=True, time_limit=600, soft_time_limit=480)  # Reduced from 40/30 min to 10/8 min
-def process_single_document(self, session_id, document_id):
+def process_single_document(self, session_id, document_id, encryption_key=None):
     """
     Process a single document - can be picked up by any available worker
     Args:
@@ -126,26 +129,57 @@ def process_single_document(self, session_id, document_id):
         document.save()
         
         # Real AI processing with Llama 3 - with timeout protection
-        temp_dir = tempfile.mkdtemp(prefix=f'doc_analysis_{document_id}_')
+        # No temporary file written to disk for decrypted content
+        
+        from django.conf import settings
+        from privacy_engine.strategies import get_fernet_instance, derive_key_from_session_id
+        from privacy_engine.security_monitor import SecurityMonitor, monitor_processing_security
+        from cryptography.fernet import Fernet # Ensure Fernet is imported here
+
+        # If encryption_key is not passed, derive it (e.g., for direct calls or testing)
+        if settings.PRIVACY_ENGINE_ENABLED and encryption_key is None:
+            encryption_key = derive_key_from_session_id(str(session.id))
+
         try:
-            print(f"AI processing: {document.filename}")
+            # AI processing logged via proper logger above
             start_time = time.time()
-            analyzer = OllamaDocumentAnalyzer()
-            original_path = document.file.path
-            temp_file_path = os.path.join(temp_dir, f"doc_{document.filename}")
-            shutil.copy2(original_path, temp_file_path)
-            
-            analysis_result_data = analyzer.analyze_document(temp_file_path)
+
+            file_bytes = None # Initialize to None
+            if document.file:
+                # DEBUG: Entering document.file.read() block
+                print(f"DEBUG: document.file exists. Name: {document.file.name}, Size: {document.file.size}")
+                try:
+                    encrypted_file_bytes = document.file.read()
+                    print(f"DEBUG: After document.file.read() - Type: {type(encrypted_file_bytes)}, Length: {len(encrypted_file_bytes) if encrypted_file_bytes is not None else 'None'}")
+                    
+                    if settings.PRIVACY_ENGINE_ENABLED and encryption_key:
+                        fernet_instance = get_fernet_instance(encryption_key)
+                        file_bytes = fernet_instance.decrypt(encrypted_file_bytes)
+                        print(f"DEBUG: Decryption successful. Decrypted content length: {len(file_bytes)}")
+                    else:
+                        file_bytes = encrypted_file_bytes
+                        print("DEBUG: Privacy engine disabled or no encryption key, using original file bytes.")
+
+                except Exception as e:
+                    print(f"DEBUG: Error reading or decrypting document.file: {e}")
+            else:
+                print("DEBUG: document.file is None!")
+
+            if file_bytes is None:
+                raise ValueError("file_bytes is None after reading document.file. Cannot proceed with AI analysis.")
+
+            analyzer = OllamaDocumentAnalyzer() # Pass the key
+            analysis_result_data = analyzer.analyze_document(file_bytes, document.filename)
             elapsed = time.time() - start_time
-            print(f"AI processing completed in {elapsed:.1f}s for {document.filename}")
+            # AI processing completion logged via proper logger
             
             if analysis_result_data:
                 # Convert OllamaExtractedData to our expected format
                 analysis_result = _convert_ollama_data_to_expected_format(analysis_result_data, document.filename)
-                print(f"AI analysis result for {document.filename}: {analysis_result.get('document_type', 'unknown')}")
+                # AI analysis result logged via proper logger above
                 print(f"AI extracted values: {analysis_result}")
             else:
-                print(f"No AI analysis result for {document.filename}, using fallback")
+                # No AI result warning logged via proper logger above
                 analysis_result = {
                     "document_type": "other",
                     "extracted_data": {"error": "No analysis result from AI"}
@@ -155,23 +189,21 @@ def process_single_document(self, session_id, document_id):
             elapsed = time.time() - start_time
             error_msg = str(e)
             if "timed out" in error_msg.lower():
-                print(f"AI processing timed out after {elapsed:.1f}s for {document.filename}: {e}")
+                # Timeout error logged via proper logger above
                 analysis_result = {
                     "document_type": "other", 
                     "extracted_data": {"error": f"AI processing timed out after {elapsed:.1f}s"}
                 }
             else:
-                print(f"Error in AI processing for {document.filename}: {e}")
+                # AI processing error logged via proper logger above
                 analysis_result = {
                     "document_type": "other", 
                     "extracted_data": {"error": f"AI processing failed: {str(e)}"}
                 }
-        finally:
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir, ignore_errors=True)
+        
         
         # Save the analysis result
-        print(f"Saving result for {document.filename}: {analysis_result.get('document_type', 'NO_TYPE')}")
+        # Saving result logged via proper logger above
         AnalysisResult.objects.create(
             session=session,
             document=document,
@@ -200,10 +232,10 @@ def process_single_document(self, session_id, document_id):
         raise Exception(f"Failed to process document {document_id}: {str(e)}")
 
 import logging
-logger = logging.getLogger(__name__)
+logger = get_pii_safe_logger(__name__)
 
 @shared_task(bind=True, time_limit=3600, soft_time_limit=3000)
-def process_session_analysis_parallel(self, session_id):
+def process_session_analysis_parallel(self, session_id, encryption_key=None):
     """
     Parallel session analysis - spawns separate tasks for each document
     All documents processed in parallel across multiple workers
@@ -231,9 +263,9 @@ def process_session_analysis_parallel(self, session_id):
             document.save()
             
             # Spawn individual task for this document
-            doc_task = process_single_document.delay(session_id, document.pk)
+            doc_task = process_single_document.delay(session_id, document.pk, encryption_key=encryption_key)
             document_tasks.append((document.pk, doc_task.id))
-            logger.info(f"Spawned task {doc_task.id} for document: {document.filename}")
+            logger.info_with_filename("Spawned task {task_id} for document: {filename}", document.filename, task_id=doc_task.id)
         
         # Monitor document processing completion
         import time
@@ -277,7 +309,7 @@ def process_session_analysis_parallel(self, session_id):
 
 def _generate_final_summary(session, completed_docs):
     """Generate comprehensive tax summary with full calculation logic"""
-    logger = logging.getLogger(__name__)
+    logger = get_pii_safe_logger(__name__)
     
     if completed_docs.exists():
         # Aggregate results from all processed documents based on actual AI analysis
@@ -295,11 +327,11 @@ def _generate_final_summary(session, completed_docs):
         
         for doc in completed_docs:
             result = AnalysisResult.objects.filter(session=session, document=doc).first()
-            logger.info(f"Aggregating: {doc.filename} - Result: {bool(result)}")
+            logger.info_with_filename("Aggregating: {filename} - Result: {result}", doc.filename, result=bool(result))
             if result and result.result_data:
                 data = result.result_data
                 doc_type = data.get('document_type', '')
-                logger.info(f"Processing: {doc.filename} -> {doc_type}")
+                logger.info_with_filename("Processing: {filename} -> {doc_type}", doc.filename, doc_type=doc_type)
                 
                 # Aggregate salary and tax data from Form16
                 if doc_type == 'form16':
@@ -502,47 +534,51 @@ def process_session_analysis_distributed(self, session_id):
             
             # Process document directly inline to avoid celery sub-task issues
             try:
-                logger.info(f"Processing {document.filename} inline...")
+                logger.info_with_filename("Processing {filename} inline...", document.filename)
                 
                 # Update document status to processing
                 document.status = Document.Status.PROCESSING
                 document.save()
                 
                 # Real AI processing with Llama 3 - no mock data
-                temp_dir = tempfile.mkdtemp(prefix=f'doc_analysis_{document.pk}_')
+                # No temporary file written to disk for decrypted content
                 try:
-                    logger.info(f"AI processing: {document.filename}")
-                    analyzer = OllamaDocumentAnalyzer()
-                    original_path = document.file.path
-                    temp_file_path = os.path.join(temp_dir, f"doc_{document.filename}")
-                    shutil.copy2(original_path, temp_file_path)
+                    logger.info_with_filename("AI processing: {filename}", document.filename)
                     
-                    analysis_result_data = analyzer.analyze_document(temp_file_path)
+                    if settings.PRIVACY_ENGINE_ENABLED:
+                        encryption_key_for_analyzer = derive_key_from_session_id(str(session.id))
+                    else:
+                        encryption_key_for_analyzer = None
+
+                    analyzer = OllamaDocumentAnalyzer(encryption_key=encryption_key_for_analyzer)
+
+                    # Read decrypted file content directly from storage
+                    file_bytes = document.file.read()
+
+                    analysis_result_data = analyzer.analyze_document(file_bytes, document.filename)
                     
                     if analysis_result_data:
                         # Convert OllamaExtractedData to our expected format
                         analysis_result = _convert_ollama_data_to_expected_format(analysis_result_data, document.filename)
-                        logger.info(f"AI analysis result for {document.filename}: {analysis_result.get('document_type', 'unknown')}")
+                        logger.info_with_filename("AI analysis result for {filename}: {doc_type}", document.filename, doc_type=analysis_result.get('document_type', 'unknown'))
                         logger.info(f"AI extracted values: {analysis_result}")
                     else:
-                        logger.warning(f"No AI analysis result for {document.filename}, using fallback")
+                        logger.warning_with_filename("No AI analysis result for {filename}, using fallback", document.filename)
                         analysis_result = {
                             "document_type": "other",
                             "extracted_data": {"error": "No analysis result from AI"}
                         }
                     
                 except Exception as e:
-                    logger.error(f"Error in AI processing for {document.filename}: {e}")
+                    logger.error_with_filename("Error in AI processing for {filename}: {error}", document.filename, error=str(e))
                     analysis_result = {
                         "document_type": "other", 
                         "extracted_data": {"error": f"AI processing failed: {str(e)}"}
                     }
-                finally:
-                    if os.path.exists(temp_dir):
-                        shutil.rmtree(temp_dir, ignore_errors=True)
+                
                 
                 # Save the analysis result
-                logger.info(f"Saving result for {document.filename}: {analysis_result.get('document_type', 'NO_TYPE')}")
+                logger.info_with_filename("Saving result for {filename}: {doc_type}", document.filename, doc_type=analysis_result.get('document_type', 'NO_TYPE'))
                 AnalysisResult.objects.create(
                     session=session,
                     document=document,
@@ -554,9 +590,9 @@ def process_session_analysis_distributed(self, session_id):
                 document.processed_at = timezone.now()
                 document.save()
                 
-                logger.info(f"Completed {document.filename}")
+                logger.info_with_filename("Completed {filename}", document.filename)
             except Exception as e:
-                logger.error(f"Error processing {document.filename}: {e}")
+                logger.error_with_filename("Error processing {filename}: {error}", document.filename, error=str(e))
                 document.status = Document.Status.FAILED
                 document.save()
         
@@ -581,11 +617,11 @@ def process_session_analysis_distributed(self, session_id):
             
             for doc in completed_docs:
                 result = AnalysisResult.objects.filter(session=session, document=doc).first()
-                logger.info(f"Aggregating: {doc.filename} - Result: {bool(result)}")
+                logger.info_with_filename("Aggregating: {filename} - Result: {result}", doc.filename, result=bool(result))
                 if result and result.result_data:
                     data = result.result_data
                     doc_type = data.get('document_type', '')
-                    logger.info(f"Retrieving: {doc.filename} -> {doc_type} (keys: {list(data.keys())[:3]})...")
+                    logger.info_with_filename("Retrieving: {filename} -> {doc_type} (keys: {keys})...", doc.filename, doc_type=doc_type, keys=list(data.keys())[:3])
                     
                     # Aggregate salary and tax data from Form16
                     if doc_type == 'form16':
@@ -867,40 +903,75 @@ def process_session_analysis_full(self, session_id):
         task.save()
         send_update("Analysis started.")
 
-        # Create temporary directory for safe file processing
-        temp_dir = tempfile.mkdtemp(prefix=f'celery_analysis_{session_id}_')
-        
+        # No temporary directory needed for file processing as content is handled in-memory
+        temp_dir = None # Set to None as it's no longer used for file content
+
         # 1. Initialize Analyzer and Assistant in isolated process
         send_update("Initializing AI models...")
-        
+
         # Force garbage collection before heavy operations
         gc.collect()
-        
-        analyzer = OllamaDocumentAnalyzer()
-        assistant = IncomeTaxAssistant(analyzer=analyzer)
 
         send_update("Processing documents...")
 
         # 2. Analyze Documents with memory management
         documents = session.documents.all()
         analyzed_docs_data = []
-        
+
+        # Get encryption key for analyzer if privacy is enabled
+        encryption_key_for_analyzer = None
+        if settings.PRIVACY_ENGINE_ENABLED:
+            try:
+                encryption_key_for_analyzer = derive_key_from_session_id(str(session.id))
+                monitor_processing_security(str(session.id), "session_analysis_start")
+            except Exception as e:
+                print(f"Warning: Could not derive encryption key: {e}. Processing without encryption.")
+                encryption_key_for_analyzer = None
+                
+        analyzer = OllamaDocumentAnalyzer(encryption_key=encryption_key_for_analyzer)
+        assistant = IncomeTaxAssistant(analyzer=analyzer)
+
         for i, doc in enumerate(documents):
             try:
                 doc.status = Document.Status.PROCESSING
                 doc.save()
                 send_update(f"Processing document {i+1}/{len(documents)}: {doc.filename}")
-                
-                # Copy file to temp directory to avoid file locking issues
-                original_path = doc.file.path
-                temp_file_path = os.path.join(temp_dir, f"doc_{i}_{doc.filename}")
-                shutil.copy2(original_path, temp_file_path)
-                
+
+                # Read file content - handle encryption if enabled
+                file_bytes = None
+                if settings.PRIVACY_ENGINE_ENABLED and encryption_key_for_analyzer:
+                    # Read encrypted content and decrypt
+                    encrypted_content = doc.file.read()
+                    
+                    # Security check: verify decryption capability
+                    can_decrypt, decrypted_size, decrypt_error = SecurityMonitor.verify_decryption_capability(
+                        encrypted_content, str(doc.session.id)
+                    )
+                    
+                    if not can_decrypt:
+                        logger.error_with_filename("Security Warning: Cannot decrypt {filename}: {error}", doc.filename, error=str(decrypt_error))
+                        monitor_processing_security(str(doc.session.id), "decryption_failed")
+                    
+                    try:
+                        fernet_instance = get_fernet_instance(encryption_key_for_analyzer)
+                        file_bytes = fernet_instance.decrypt(encrypted_content)
+                        logger.debug_with_pii("Security: Successfully decrypted {filename} ({size} bytes)", filename=doc.filename, size=len(file_bytes))
+                        monitor_processing_security(str(doc.session.id), "decryption_success")
+                    except Exception as decrypt_error:
+                        logger.warning_with_filename("Decryption failed for {filename}: {error}", doc.filename, error=str(decrypt_error))
+                        file_bytes = encrypted_content  # Fallback to raw content
+                        monitor_processing_security(str(doc.session.id), "decryption_fallback")
+                else:
+                    # Read unencrypted content
+                    file_bytes = doc.file.read()
+                    if settings.PRIVACY_ENGINE_ENABLED:
+                        logger.warning_with_filename("Security: Processing {filename} without encryption (privacy disabled or no key)", doc.filename)
+
                 # Process with error handling and memory cleanup
                 analysis_result_data = None
                 try:
-                    analysis_result_data = analyzer.analyze_document(temp_file_path)
-                    
+                    analysis_result_data = analyzer.analyze_document(file_bytes, doc.filename)
+                
                     if analysis_result_data:
                         # Convert dataclass to dict before saving
                         result_dict = dataclasses.asdict(analysis_result_data)
@@ -918,14 +989,11 @@ def process_session_analysis_full(self, session_id):
                     send_update(f"Error processing {doc.filename}: {str(doc_error)}")
                     doc.status = Document.Status.FAILED
                     doc.save()
-                
+            
                 finally:
-                    # Clean up temporary file immediately
-                    if os.path.exists(temp_file_path):
-                        os.unlink(temp_file_path)
-                    
                     # Force garbage collection after each document
-                    del analysis_result_data
+                    if 'analysis_result_data' in locals():
+                        del analysis_result_data
                     gc.collect()
                     
             except Exception as e:
@@ -968,11 +1036,7 @@ def process_session_analysis_full(self, session_id):
         
     finally:
         # Critical cleanup to prevent memory leaks and SIGSEGV
-        try:
-            if temp_dir and os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir, ignore_errors=True)
-        except:
-            pass
+        
             
         # Clean up heavy objects
         if analyzer:

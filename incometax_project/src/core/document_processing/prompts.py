@@ -175,20 +175,20 @@ XYZ COMPANY LIMITED
 Employee Name: SAMPLE EMPLOYEE
 PAN: SAMPLEF1234
 
-PART A - DETAILS OF SALARY PAID
-Financial Year: 2024-25
-Gross Salary: ₹12,00,000
-Value of perquisites under section 17(2): ₹50,000
+PART A - Summary
+Total amount paid/credited: ₹12,50,000
+Total tax deducted: ₹1,50,000
 
-Monthly Tax Deduction Details:
-April 2024: Salary ₹1,00,000 Tax Deducted ₹8,000
-May 2024: Salary ₹1,00,000 Tax Deducted ₹8,000
-...
-Total tax deducted and deposited with Central Government: ₹96,000
+PART B - Annexure
+1. Gross Salary
+(a) Salary as per provisions contained in section 17(1): ₹11,00,000
+(b) Value of perquisites under section 17(2): ₹1,50,000
+(d) Total: ₹12,50,000
 
-PART B - DETAILS OF TAX DEDUCTED
-Tax payable on total income: ₹96,000""",
-                example_json="""{\n  \"employee_name\": \"SAMPLE EMPLOYEE\",\n  \"pan\": \"SAMPLEF1234\",\n  \"employer_name\": \"XYZ COMPANY LIMITED\",\n  \"gross_salary\": 1200000.0,\n  \"tax_deducted\": 96000.0,\n  \"perquisites\": 50000.0,\n  \"financial_year\": \"2024-25\"\n}""" ), schema
+4. Less: Deductions under section 16
+(a) Standard deduction under section 16(ia): ₹50,000
+(c) Tax on employment under section 16(iii): ₹2,400""",
+                example_json="""{\n  \"employee_name\": \"SAMPLE EMPLOYEE\",\n  \"pan\": \"SAMPLEF1234\",\n  \"employer_name\": \"XYZ COMPANY LIMITED\",\n  \"basic_salary\": 1100000.0,\n  \"perquisites\": 150000.0,\n  \"gross_salary\": 1250000.0,\n  \"total_gross_salary\": 1250000.0,\n  \"tax_deducted\": 150000.0,\n  \"professional_tax\": 2400.0,\n  \"financial_year\": \"2024-25\"\n}""" ), schema
         elif doc_type == "mutual_fund_elss_statement":
             return _create_structured_prompt_with_example(doc_type, schema, text_content,
                 example_text="""Tax Investment Confirmation
@@ -216,11 +216,14 @@ def _create_structured_prompt(doc_type: str, schema, text_content: str):
         specific_instructions = f"""
         For Form 16 documents, carefully extract ALL financial data from the complete document:
         
-        **SALARY EXTRACTION:**
-        - **gross_salary/total_gross_salary:** Look for "Gross Salary" OR "Income chargeable under the head 'Salaries'" in Part B
-        - **basic_salary:** Look for "Salary as per provisions contained in section 17(1)"
-        - **perquisites:** Look for "Value of perquisites under section 17(2)" - this includes ESOP/ESPP gains, stock options, and other benefits
-        - **hra_received:** Look for "House rent allowance" under allowances section
+        **SALARY EXTRACTION (CRITICAL - Use ANNUAL totals only, NOT quarterly amounts):**
+        - **gross_salary:** Use "Total" from Part A summary OR "Income chargeable under the head 'Salaries'" in Part B
+        - **total_gross_salary:** Same as gross_salary - the final annual total after all inclusions  
+        - **basic_salary:** Look for "Salary as per provisions contained in section 17(1)" in Part B Annexure
+        - **perquisites:** Look for "Value of perquisites under section 17(2)" in Part B Annexure - includes ESOP/stock options
+        - **hra_received:** Look for "House rent allowance under section 10(13A)" in exemptions section
+        
+        **CRITICAL: DO NOT sum quarterly amounts from Part A. Use the ANNUAL TOTALS from Part B.**
         
         **TAX & DEDUCTIONS:**
         - **tax_deducted:** Find "Total tax deducted" OR quarterly TDS amounts
@@ -236,11 +239,13 @@ def _create_structured_prompt(doc_type: str, schema, text_content: str):
         **IMPORTANT EXTRACTION RULES:**
         1. Read the ENTIRE document - Form16 can be 8-10 pages long
         2. Look for EXACT section references like "section 17(1)", "section 16(iii)", "section 80C"
-        3. For numerical values, extract the final/total amount, not interim calculations
-        4. If multiple salary figures exist, use the annual total, not quarterly amounts
-        5. Professional Tax is usually ₹200-2400 annually
-        6. EPF is typically 12% of basic salary, capped at ₹1.8L annually
-        7. Return 0.0 for numeric fields not found, "" for missing strings
+        3. **NEVER add quarterly amounts** - Part A shows quarterly breakdowns, Part B shows annual totals
+        4. **Use Part B Annexure values** for salary components: 17(1), 17(2), 16(ia), etc.
+        5. **gross_salary should equal basic_salary + perquisites** (17(1) + 17(2))
+        6. Professional Tax is usually ₹200-2400 annually (section 16(iii))
+        7. EPF is typically 12% of basic salary, capped at ₹1.8L annually (section 80C)
+        8. Return 0.0 for numeric fields not found, "" for missing strings
+        9. **VALIDATE: gross_salary should match the sum of 17(1) + 17(2) components**
         """
 
     elif doc_type == "payslip":

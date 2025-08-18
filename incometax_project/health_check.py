@@ -52,6 +52,44 @@ def check_redis_connection():
         print(f"❌ Failed to connect to Redis: {e}")
         return False
 
+def check_database_connection():
+    """Test PostgreSQL database connectivity"""
+    print("🗄️ Testing PostgreSQL database connection...")
+    
+    try:
+        from django.db import connection
+        from django.core.management.color import no_style
+        
+        # Test basic database connectivity
+        cursor = connection.cursor()
+        cursor.execute("SELECT 1")
+        result = cursor.fetchone()
+        
+        if result and result[0] == 1:
+            print("✅ Database connected successfully")
+            
+            # Check if all tables exist
+            style = no_style()
+            tables = connection.introspection.table_names()
+            expected_tables = ['documents_processingsession', 'documents_document', 'documents_analysisresult']
+            
+            missing_tables = [table for table in expected_tables if table not in tables]
+            if missing_tables:
+                print(f"⚠️  Missing tables: {missing_tables}")
+                print("   Run migrations: python manage.py migrate")
+                return False
+            else:
+                print(f"   Found {len(tables)} database tables")
+                return True
+        else:
+            print("❌ Database query returned unexpected result")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Failed to connect to database: {e}")
+        print("   Check DATABASE_URL environment variable")
+        return False
+
 def check_celery_broker():
     """Test Celery broker connectivity"""
     print("📦 Testing Celery broker...")
@@ -208,6 +246,7 @@ def main():
     print("🔍 Starting comprehensive health check...\n")
     
     checks = [
+        check_database_connection,
         check_redis_connection,
         check_ollama_connection,
         check_celery_broker,
@@ -226,12 +265,13 @@ def main():
         print()
     
     print("📋 Health Check Summary:")
-    print(f"   Redis: {'✅' if results[0] else '❌'}")
-    print(f"   Ollama connectivity: {'✅' if results[1] else '❌'}")
-    print(f"   Celery broker: {'✅' if results[2] else '❌'}")
-    print(f"   Memory usage: {'✅' if results[3] else '❌'}")
-    print(f"   Cleanup status: {'✅' if results[4] else '❌'}")
-    print(f"   Ollama inference: {'✅' if results[5] else '❌'}")
+    print(f"   Database (PostgreSQL): {'✅' if results[0] else '❌'}")
+    print(f"   Redis: {'✅' if results[1] else '❌'}")
+    print(f"   Ollama connectivity: {'✅' if results[2] else '❌'}")
+    print(f"   Celery broker: {'✅' if results[3] else '❌'}")
+    print(f"   Memory usage: {'✅' if results[4] else '❌'}")
+    print(f"   Cleanup status: {'✅' if results[5] else '❌'}")
+    print(f"   Ollama inference: {'✅' if results[6] else '❌'}")
     
     if all(results):
         print("\n🎉 All checks passed! System should be ready for document processing.")
@@ -243,7 +283,10 @@ def main():
     else:
         print("\n⚠️  Some checks failed. Please review the issues above.")
         print("\n🔧 Troubleshooting:")
-        if not results[4]:  # Cleanup status failed
+        if not results[0]:  # Database failed
+            print("   - Check PostgreSQL service: docker-compose ps postgres")
+            print("   - Run migrations: docker-compose exec web python manage.py migrate")
+        if not results[5]:  # Cleanup status failed
             print("   - Run: docker-compose exec web python cleanup_now.py")
         sys.exit(1)
 

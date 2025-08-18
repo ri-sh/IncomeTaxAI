@@ -8,12 +8,17 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from django.core.signing import Signer, BadSignature
 from documents.models import ProcessingSession, Document, AnalysisTask, AnalysisResult
+from privacy_engine.strategies import get_fernet_instance, derive_key_from_session_id
+from privacy_engine.security_monitor import SecurityMonitor, verify_document_security
 from api.serializers import ProcessingSessionSerializer, DocumentSerializer
 from api.portal_filing_assistant import PortalFilingAssistant
 import logging
 import json
+from django.conf import settings
+from contextlib import contextmanager
+from api.utils.pii_logger import get_pii_safe_logger
 
-logger = logging.getLogger(__name__)
+logger = get_pii_safe_logger(__name__)
 
 
 class SessionViewSet(viewsets.ModelViewSet):
@@ -46,9 +51,12 @@ class SessionViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def upload_document(self, request, pk=None):
-        """Upload documents to a processing session"""
+        """
+        Upload documents to a processing session, encrypting them on the fly if privacy is enabled.
+        """
         signer = Signer()
         try:
+            # The session_id from the URL is the raw UUID string.
             session_id = signer.unsign(pk)
             session = ProcessingSession.objects.get(pk=session_id)
         except (BadSignature, ProcessingSession.DoesNotExist):
@@ -58,21 +66,69 @@ class SessionViewSet(viewsets.ModelViewSet):
         if not files:
             return Response({'error': 'No files provided'}, status=status.HTTP_400_BAD_REQUEST)
 
-        documents = []
+        uploaded_documents = []
+
+        # Handle encryption for privacy-enabled mode
+        from cryptography.fernet import Fernet
+        
+        encryption_key = None
+        fernet_instance = None
+        if settings.PRIVACY_ENGINE_ENABLED:
+            encryption_key = derive_key_from_session_id(str(session.id))
+            fernet_instance = get_fernet_instance(encryption_key)
+
         for file in files:
+            # Determine filename to store and whether it's encrypted
+            stored_filename = file.name
+            is_filename_encrypted = False
+            encrypted_filename_bytes = None
+
+            if settings.PRIVACY_ENGINE_ENABLED and fernet_instance:
+                try:
+                    # Encrypt filename
+                    encrypted_filename_bytes = fernet_instance.encrypt(file.name.encode('utf-8'))
+                    is_filename_encrypted = True
+                    
+                    # Encrypt file content before saving
+                    file.seek(0)  # Reset file pointer
+                    original_content = file.read()
+                    encrypted_content = fernet_instance.encrypt(original_content)
+                    
+                    # Create new file-like object with encrypted content
+                    from django.core.files.base import ContentFile
+                    file = ContentFile(encrypted_content, name=file.name)
+                    
+                except Exception as e:
+                    print(f"Warning: Could not encrypt file {file.name}: {e}. Storing in plaintext.")
+                    # Fallback to plaintext if encryption fails
+                    encrypted_filename_bytes = None
+                    is_filename_encrypted = False
+
             document = Document.objects.create(
                 session=session,
-                file=file,
-                filename=file.name
+                file=file,  # Now contains encrypted content if privacy enabled
+                filename=stored_filename,  # Always store plaintext here for display/fallback
+                encrypted_filename=encrypted_filename_bytes,  # Store encrypted bytes if applicable
+                is_filename_encrypted=is_filename_encrypted,
+                status=Document.Status.UPLOADED
             )
-            documents.append(document)
+            uploaded_documents.append(document)
+            
+            # Perform security verification for uploaded document
+            if settings.PRIVACY_ENGINE_ENABLED:
+                security_check = verify_document_security(document)
+                if security_check["status"] == "insecure":
+                    logger.warning_with_filename("Security check failed for document {filename}: {check_details}", document.filename, check_details=security_check)
+                else:
+                    logger.info_with_filename("Security check passed for document {filename}", document.filename)
 
         # Update session status
         if session.status == ProcessingSession.Status.CREATED:
             session.status = ProcessingSession.Status.PENDING
             session.save()
 
-        serializer = DocumentSerializer(documents, many=True)
+        # Use DocumentSerializer now
+        serializer = DocumentSerializer(uploaded_documents, many=True)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'])
@@ -110,9 +166,14 @@ class SessionViewSet(viewsets.ModelViewSet):
         session.status = ProcessingSession.Status.PROCESSING
         session.save()
 
+        # Pass encryption key to Celery task for privacy-enabled mode
+        encryption_key = None
+        if settings.PRIVACY_ENGINE_ENABLED:
+            encryption_key = derive_key_from_session_id(str(session_id))
+
         # Trigger parallel Celery task processing
         from api.tasks import process_session_analysis_parallel
-        task = process_session_analysis_parallel.delay(session_id)
+        task = process_session_analysis_parallel.delay(session_id, encryption_key=encryption_key)
 
         # Create AnalysisTask record
         AnalysisTask.objects.create(
@@ -146,18 +207,18 @@ class SessionViewSet(viewsets.ModelViewSet):
         # Get detailed document statuses with processing info
         documents = session.documents.all()
         document_statuses = []
-        
+
         for doc in documents:
             doc_info = {
                 'id': str(doc.pk),
-                'filename': doc.filename,
+                'filename': doc.display_filename, # Use the model property for decrypted filename
                 'status': doc.status,
                 'uploaded_at': doc.uploaded_at,
                 'processed_at': getattr(doc, 'processed_at', None),
                 'file_size': doc.file.size if doc.file else 0,
                 'progress_percentage': 0
             }
-            
+
             # Calculate progress percentage based on status
             if doc.status == Document.Status.UPLOADED:
                 doc_info['progress_percentage'] = 0
@@ -173,7 +234,7 @@ class SessionViewSet(viewsets.ModelViewSet):
                 doc_info['status_text'] = 'Processing failed'
             else:
                 doc_info['status_text'] = 'Unknown status'
-            
+
             document_statuses.append(doc_info)
         
         # Calculate overall progress
@@ -242,7 +303,7 @@ class SessionViewSet(viewsets.ModelViewSet):
                 # Document-specific results
                 document_results.append({
                     'document_id': str(result.document.pk),
-                    'filename': result.document.filename,
+                    'filename': result.document.display_filename, # Use the model property for decrypted filename
                     'document_type': result.result_data.get('document_type', 'unknown'),
                     'data': result.result_data
                 })
@@ -416,5 +477,26 @@ class SessionViewSet(viewsets.ModelViewSet):
             logger.error(f"Error recalculating tax for session {session_id}: {e}", exc_info=True)
             return Response({
                 'error': 'Failed to recalculate tax',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=False, methods=['get'])
+    def security_health(self, request):
+        """Get privacy engine security health status"""
+        from privacy_engine.security_monitor import SecurityMonitor
+        
+        try:
+            health_report = SecurityMonitor.security_health_check()
+            
+            return Response({
+                'success': True,
+                'health_report': health_report,
+                'privacy_enabled': settings.PRIVACY_ENGINE_ENABLED
+            })
+            
+        except Exception as e:
+            logger.error(f"Error performing security health check: {e}", exc_info=True)
+            return Response({
+                'error': 'Failed to perform security health check',
                 'details': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

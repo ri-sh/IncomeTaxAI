@@ -1,0 +1,17 @@
+[build]
+builder = "dockerfile"
+dockerfilePath = "incometax_project/Dockerfile"
+
+[deploy]
+healthcheckPath = "/api/health/"
+healthcheckTimeout = 300
+restartPolicyType = "on-failure"
+restartPolicyMaxRetries = 3
+
+[env]
+# Railway will automatically inject these
+# DATABASE_URL - PostgreSQL provided by Railway
+# REDIS_URL - Redis provided by Railway
+PORT = 8000
+DEBUG = false
+ALLOWED_HOSTS = "*.railway.app,*.up.railway.app"

@@ -12,12 +12,24 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 import os
 from pathlib import Path
+import dj_database_url
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Production-ready settings
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-o4um=19zl-2w73o-)zewvavu@vqpk43(q=5l(cq3h5qizk^0ij')
+
+# Privacy Engine Configuration
+PRIVACY_ENGINE_ENABLED = os.environ.get('PRIVACY_ENGINE_ENABLED', 'true').lower() == 'true'
+
+# Salt for deriving encryption keys. THIS MUST BE KEPT SECRET and should be set as an environment variable in production.
+ENCRYPTION_SALT = os.environ.get('ENCRYPTION_SALT', 'a-secure-default-salt-for-development-only')
+
+# Logging configuration for PII (Personally Identifiable Information)
+LOG_PII = os.environ.get('LOG_PII', 'false').lower() == 'true'
+
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
@@ -52,6 +64,7 @@ INSTALLED_APPS = [
     'api',
     'documents',
     'analysis',
+    'privacy_engine.apps.PrivacyEngineConfig',
 ]
 
 MIDDLEWARE = [
@@ -90,10 +103,10 @@ WSGI_APPLICATION = 'incometax_project.wsgi.application'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+    'default': dj_database_url.config(
+        default=os.environ.get('DATABASE_URL', 'postgresql://incometax_user:incometax_password@db:5432/incometax_db'),
+        conn_max_age=600
+    )
 }
 
 

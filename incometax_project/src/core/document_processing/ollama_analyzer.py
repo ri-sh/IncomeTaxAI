@@ -1,11 +1,14 @@
 import dataclasses
 import logging
 import os
-from pathlib import Path
 from typing import Any, Optional, Tuple
 import signal
 import time
 from contextlib import contextmanager
+import sys
+# Add the parent directory to sys.path to import from api.utils
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+from api.utils.pii_logger import get_pii_safe_logger
 
 import re
 import json
@@ -112,9 +115,10 @@ class OllamaExtractedData:
 class OllamaDocumentAnalyzer:
 
     def __init__(self):
+        print("DEBUG: OllamaDocumentAnalyzer.__init__ called")
         self.model_name = settings.OLLAMA_MODEL
-        self.logger = logging.getLogger(__name__)
-        self.llm = self._setup_ollama(model_name=self.model_name)
+        self.logger = get_pii_safe_logger(__name__)
+        self.llm = None # Initialize to None
         self.post_processing_functions = {
             "form_16": self._post_process_form16_data,
             "payslip": self._post_process_payslip_data,
@@ -138,6 +142,7 @@ class OllamaDocumentAnalyzer:
                     num_predict=2048
                 )
                 # Test the connection
+                print("DEBUG: Calling ollama_llm.complete(\"test\") in _setup_ollama")
                 self.logger.info("Testing Ollama connection...")
                 ollama_llm.complete("test")
                 self.logger.info(f"Successfully connected to Ollama at {base_url}")
@@ -150,23 +155,24 @@ class OllamaDocumentAnalyzer:
         
         self.logger.error("Could not connect to Ollama after multiple attempts.")
         return None
+
     
-    def analyze_document(self, file_path):
+    def analyze_document(self, file_bytes: bytes, filename: str = "document"):
         """Analyze document with comprehensive timeout protection"""
-        file_path = Path(file_path)
         start_time = time.time()
+        file_ext = os.path.splitext(filename)[1].lower()
         
         try:
             with timeout_context(300):  # 5-minute overall timeout for entire analysis
-                return self._analyze_document_internal(file_path)
+                return self._analyze_document_internal(file_bytes, file_ext, filename)
         except TimeoutError as e:
             elapsed = time.time() - start_time
-            self.logger.error(f"Document analysis timed out after {elapsed:.1f}s: {file_path.name}")
+            self.logger.error_with_filename("Document analysis timed out after {elapsed}s: {filename}", filename, elapsed=f"{elapsed:.1f}")
             return OllamaExtractedData(
                 document_type="unknown", 
                 confidence=0.0, 
                 errors=[f"Analysis timed out after {elapsed:.1f} seconds"],
-                file_path=str(file_path)
+                file_path=filename # Store filename for context
             )
         except Exception as e:
             elapsed = time.time() - start_time
@@ -175,10 +181,10 @@ class OllamaDocumentAnalyzer:
                 document_type="unknown", 
                 confidence=0.0, 
                 errors=[f"Analysis failed: {str(e)}"],
-                file_path=str(file_path)
+                file_path=filename # Store filename for context
             )
 
-    def _analyze_document_internal(self, file_path):
+    def _analyze_document_internal(self, file_bytes: bytes, file_ext: str, filename: str):
         """Internal document analysis method without timeout wrapper"""
         # Don't reinitialize LLM if already available
         if not self.llm:
@@ -188,14 +194,14 @@ class OllamaDocumentAnalyzer:
 
         if not self.llm:
             return OllamaExtractedData(document_type="unknown", confidence=0.0, errors=["Ollama LLM not available"])
-        
+
         # NEW: Prioritize filename-based classification for Form 16
-        if "form16" in file_path.name.lower():
+        if "form16" in filename.lower():
             doc_type = "form_16"
-            print(f"DEBUG: Classified as form_16 based on filename: {file_path.name}")
+            print(f"DEBUG: Classified as form_16 based on filename: {filename}")
         
         try:
-            plain_text_content, processed_df, sections = self._extract_text_content(file_path)
+            plain_text_content, processed_df, sections = self._extract_text_content(file_bytes, file_ext, filename)
             structured_text_content = plain_text_content
 
             # Only run Ollama for doc_type classification if not already determined by filename
@@ -207,7 +213,7 @@ class OllamaDocumentAnalyzer:
                     json_data_doc_type = self._parse_json_response(response.text.strip())
                     doc_type = json_data_doc_type.get("type", json_data_doc_type.get("document_type", "unknown"))
                 except TimeoutError:
-                    self.logger.warning(f"Document type classification timed out for {file_path.name}")
+                    self.logger.warning_with_filename("Document type classification timed out for {filename}", filename)
                     doc_type = "unknown"
             
             # Normalize doc_type to match internal schema keys (still useful for other types)
@@ -231,7 +237,7 @@ class OllamaDocumentAnalyzer:
                 doc_type = "form_16" # This line becomes redundant but harmless
             
             # Enhanced filename-based classification for ELSS and NPS documents
-            filename_lower = file_path.name.lower()
+            filename_lower = filename.lower()
             if doc_type in ["unknown", "document"] and any(keyword in filename_lower for keyword in ["elss", "mutual_funds_elss", "mutual fund elss"]):
                 doc_type = "mutual_fund_elss_statement"
             elif doc_type in ["unknown", "document"] and "nps" in filename_lower:
@@ -245,7 +251,7 @@ class OllamaDocumentAnalyzer:
                 json_data = self._parse_json_response(response.text.strip())
                 self.logger.info(f"DEBUG: Raw LLM response for data extraction: {json_data}")
             except TimeoutError:
-                self.logger.error(f"Data extraction timed out for {file_path.name}")
+                self.logger.error_with_filename("Data extraction timed out for {filename}", filename)
                 json_data = None
             except Exception as e:
                 self.logger.error(f"Error during Ollama completion or JSON parsing: {e}", exc_info=True)
@@ -271,7 +277,7 @@ class OllamaDocumentAnalyzer:
                                 self.logger.warning(f"Could not convert {field} '{json_data[field]}' to float.")
                                 json_data[field] = 0.0
 
-                json_data["file_path"] = str(file_path)
+                json_data["file_path"] = filename # Store filename for context
                 json_data["raw_text"] = plain_text_content
 
                 if doc_type.lower() in self.post_processing_functions:
@@ -323,19 +329,18 @@ class OllamaDocumentAnalyzer:
                     raw_text=plain_text_content[:1000], extraction_method=f"ollama_llm_error_no_fallback_{self.model_name}"
                 )
 
-    def _extract_text_content(self, file_path):
-        file_ext = file_path.suffix.lower()
+    def _extract_text_content(self, file_bytes: bytes, file_ext: str, filename: str):
         try:
             if file_ext == ".pdf":
-                combined_text, page_text = extract_pdf_text(file_path)
+                combined_text, page_text = extract_pdf_text(file_bytes, filename)
                 return combined_text, None, page_text
             elif file_ext in [".xlsx", ".xls"]:
-                text_content, processed_df, sections = extract_excel_text(file_path)
+                text_content, processed_df, sections = extract_excel_text(file_bytes, filename)
                 return text_content, processed_df, sections
             else:
                 return "", None, None
         except Exception as e:
-            print(f"Error extracting text from {file_path}: {e}")
+            print(f"Error extracting text from {filename}: {e}")
             return "", None, None
 
     def _run_regex_fallback(self, doc_type: str, json_data: dict) -> Optional[dict]:

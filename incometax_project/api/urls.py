@@ -6,6 +6,8 @@ from .views.frontend_views import tax_analysis_report
 router = DefaultRouter()
 router.register(r'sessions', SessionViewSet)
 
+from privacy_engine.views import serve_protected_file
+
 urlpatterns = [
     # REST API endpoints
     path('', include(router.urls)),
@@ -17,4 +19,7 @@ urlpatterns = [
     
     # Frontend pages
     path('tax_analysis_report/', tax_analysis_report, name='tax_analysis_report'),
+    
+    # Secure serving of protected files
+    path('protected_files/<uuid:file_id>/', serve_protected_file, name='serve_protected_file'),
 ]

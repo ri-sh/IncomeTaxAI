@@ -1,5 +1,6 @@
 import uuid
 from django.db import models
+from privacy_engine.storage import EncryptedStorage
 
 class ProcessingSession(models.Model):
     """
@@ -31,8 +32,29 @@ class Document(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     session = models.ForeignKey(ProcessingSession, related_name='documents', on_delete=models.CASCADE)
-    file = models.FileField(upload_to='documents/%Y/%m/%d/')
+    file = models.FileField(upload_to='documents/%Y/%m/%d/', storage=EncryptedStorage())
     filename = models.CharField(max_length=255)
+    encrypted_filename = models.BinaryField(null=True, blank=True)
+    is_filename_encrypted = models.BooleanField(default=False)
+
+    @property
+    def display_filename(self):
+        from django.conf import settings
+        from privacy_engine.strategies import derive_key_from_session_id, get_fernet_instance
+
+        if self.is_filename_encrypted and settings.PRIVACY_ENGINE_ENABLED:
+            try:
+                # Derive key from session ID
+                encryption_key = derive_key_from_session_id(str(self.session.id))
+                fernet_instance = get_fernet_instance(encryption_key)
+                # Convert memoryview/bytes to proper format for Fernet
+                encrypted_data = bytes(self.encrypted_filename)
+                return fernet_instance.decrypt(encrypted_data).decode('utf-8')
+            except Exception as e:
+                print(f"Error decrypting filename for doc {self.id}: {e}")
+                return f"Encrypted Filename Error ({self.id})"
+        else:
+            return self.filename  # Return plaintext filename
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.UPLOADED)
     uploaded_at = models.DateTimeField(auto_now_add=True)
     processed_at = models.DateTimeField(null=True, blank=True)

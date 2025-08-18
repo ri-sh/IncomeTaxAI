@@ -1,16 +1,29 @@
 import fitz
 import camelot
+from io import BytesIO
+import tempfile
+import os
 
-def extract_pdf_text(file_path):
-    """Extract text from PDF using PyMuPDF and tables using Camelot, preserving some layout information"""
+def extract_pdf_text(file_bytes, filename="temp.pdf"):
+    """Extract text from PDF using PyMuPDF and tables using Camelot from bytes"""
     full_text = []
     camelot_tables_text = []
 
+    # Camelot requires a file path, so we'll write to a temporary file
+    # This is a necessary evil for Camelot, but the file is immediately deleted.
+    temp_pdf_file = None
     try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_file:
+            temp_file.write(file_bytes)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())  # Ensure it's fully written to disk
+            temp_file.close()  # Close before Camelot reads it
+            temp_pdf_file = temp_file.name
+
         # Limit to first 10 pages to cover full Form16 (9 pages) and other documents
-        tables = camelot.read_pdf(str(file_path), pages='1-10', flavor='lattice', suppress_stdout=True)
+        tables = camelot.read_pdf(temp_pdf_file, pages='1-10', flavor='lattice', suppress_stdout=True)
         if not tables:
-            tables = camelot.read_pdf(str(file_path), pages='1-10', flavor='stream', suppress_stdout=True)
+            tables = camelot.read_pdf(temp_pdf_file, pages='1-10', flavor='stream', suppress_stdout=True)
 
         if tables:
             for i, table in enumerate(tables):
@@ -23,9 +36,13 @@ def extract_pdf_text(file_path):
     except Exception as e:
         print(f"⚠️ Error during Camelot table extraction: {e}")
         pass
+    finally:
+        if temp_pdf_file and os.path.exists(temp_pdf_file):
+            os.remove(temp_pdf_file)
 
     try:
-        doc = fitz.open(file_path)
+        # PyMuPDF can open from bytes directly
+        doc = fitz.open("pdf", file_bytes)
         for page_num, page in enumerate(doc):
             full_text.append(f"\n--- Page {page_num + 1} ---")
 
@@ -59,3 +76,5 @@ def extract_pdf_text(file_path):
         if camelot_tables_text:
             return "\n".join(camelot_tables_text), ""
         return "", ""
+
+

@@ -29,6 +29,7 @@ wheels/
 
 # Logs and cache
 logs/
+incometax_project/logs/
 cache/
 temp_images/
 .pytest_cache
@@ -45,14 +46,39 @@ tax_analysis_report.txt
 credentials.json
 google_token.json
 
+# Personal financial documents - DO NOT COMMIT
+*Form16*
+*Payslip*
+*payslip*
+*Bank_Interest*
+*Mutual_Fund*
+*Capital_Gains*
+*Stock*
+*NPS*
+*nps*
+*ELSS*
+*PAN*
+*Aadhaar*
+*aadhar*
+
+
 # Test files and debugging
 test_*.py
 debug_*.py
 *_test.py
-tests/
+tests_archive/
 model_test_results_*.json
 model_optimization_results.json
+performance_analysis.md
 quickstart.py
+*analysis*.py
+check_latest_session.py
+simple_*_test.py
+
+# Keep essential Django tests but ignore empty ones
+*/tests.py
+!tests/test_tax_calculator.py
+!api/tests/test_cleanup_tasks.py
 
 # IDE and editor files
 .vscode/
@@ -91,3 +117,43 @@ incometax_project/static/admin/
 static/admin/
 incometax_project/static/rest_framework/
 documents/test
+
+# Production and deployment files
+.env.production
+.env.local
+.env.staging
+railway.json
+.railway/
+docker-compose.override.yml
+.docker/
+
+# Django collected static files
+staticfiles/
+incometax_project/staticfiles/
+
+# Celery
+celerybeat-schedule
+incometax_project/celerybeat-schedule
+celery_*.log
+celery*.log
+*.pid
+
+# Media files (uploaded documents) - Contains personal financial data
+incometax_project/media/documents/
+incometax_project/media/protected_files/
+media/documents/
+media/protected_files/
+documents/2025/
+documents/2024/
+
+# Backup and archive files
+backups/
+archives/
+*.bak
+*.backup
+
+# Performance and monitoring
+*.prof
+*.profile
+monitoring/
+metrics/

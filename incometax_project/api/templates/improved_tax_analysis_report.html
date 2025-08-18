@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tax Analysis Report - Enhanced with Privacy</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     <style>
         :root {
             --primary: #2563eb;
@@ -39,8 +41,9 @@
         /* Floating Action Buttons */
         .floating-actions {
             position: fixed;
-            bottom: 30px;
+            top: 50%;
             right: 30px;
+            transform: translateY(-50%);
             display: flex;
             flex-direction: column;
             gap: 15px;
@@ -594,22 +597,9 @@
             position: relative;
         }
 
-        .privacy-mode [data-amount]:not(.no-mask) {
-            color: transparent !important;
-        }
+        
 
-        .privacy-mode [data-amount]:not(.no-mask)::after {
-            content: "XX,XX,XXX";
-            position: absolute;
-            left: 0;
-            top: 0;
-            right: 0;
-            bottom: 0;
-            color: var(--text);
-            display: flex;
-            align-items: center;
-            justify-content: inherit;
-        }
+        
 
         /* Responsive Design */
         @media (max-width: 768px) {
@@ -682,21 +672,8 @@
         <button class="floating-btn edit-btn" id="editButton" title="Edit Tax Details">
             ✏️
         </button>
-        <button class="floating-btn" id="debugToggle" title="Toggle Debug Panel" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white;">
-            🐛
-        </button>
     </div>
-
-    <!-- Debug Panel -->
-    <div id="debugPanel" style="display: none; position: fixed; top: 10px; left: 10px; width: 400px; max-height: 80vh; overflow-y: auto; background: white; border: 2px solid #f59e0b; border-radius: 10px; padding: 20px; z-index: 1000; box-shadow: 0 10px 30px rgba(0,0,0,0.3);">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-            <h3 style="margin: 0; color: #f59e0b;">🐛 Backend Data Debug</h3>
-            <button id="closeDebug" style="background: none; border: none; font-size: 20px; cursor: pointer;">×</button>
-        </div>
-        <div id="debugContent" style="font-family: monospace; font-size: 12px; white-space: pre-wrap; max-height: 60vh; overflow-y: auto; background: #f8f9fa; padding: 10px; border-radius: 5px;">
-            No data loaded yet...
-        </div>
-    </div>
+        
 
     <div class="container">
         <!-- Header -->
@@ -1068,9 +1045,7 @@
             // Edit button
             document.getElementById('editButton').addEventListener('click', openEditModal);
             
-            // Debug panel toggle
-            document.getElementById('debugToggle').addEventListener('click', toggleDebugPanel);
-            document.getElementById('closeDebug').addEventListener('click', toggleDebugPanel);
+            
             
             // Modal controls
             document.getElementById('closeModal').addEventListener('click', closeEditModal);
@@ -1097,6 +1072,14 @@
             const button = document.getElementById('privacyToggle');
             button.innerHTML = isPrivacyMode ? '🙈' : '👁️';
             button.title = isPrivacyMode ? 'Show Amounts' : 'Hide Amounts';
+
+            document.querySelectorAll('[data-amount]').forEach(element => {
+                if (isPrivacyMode) {
+                    element.textContent = '₹XX,XX,XXX';
+                } else {
+                    element.textContent = element.getAttribute('data-original-value');
+                }
+            });
         }
 
         async function loadAnalysisData() {
@@ -1111,8 +1094,7 @@
                 console.log('Full API Response:', apiData);
                 console.log('Tax Summary:', backendResults);
                 
-                // Debug specific data sections
-                debugBackendData();
+                
                 
                 // Display the data
                 displayReportData();
@@ -1124,71 +1106,9 @@
             }
         }
 
-        function debugBackendData() {
-            if (!backendResults) {
-                console.warn('No backend results available');
-                updateDebugPanel('No backend results available');
-                return;
-            }
-            
-            console.log('=== DEBUGGING BACKEND DATA STRUCTURE ===');
-            
-            // Income breakdown
-            const incomeBreakdown = backendResults.income_breakdown || {};
-            console.log('Income Breakdown:', incomeBreakdown);
-            console.log('  - Salary Income:', incomeBreakdown.salary_income);
-            console.log('  - Other Income:', incomeBreakdown.other_income);
-            
-            // Tax calculations
-            const oldRegimeCalc = backendResults.tax_calculation_old_regime || {};
-            const newRegimeCalc = backendResults.tax_calculation_new_regime || {};
-            console.log('Old Regime Calculation:', oldRegimeCalc);
-            console.log('  - Taxable Income:', oldRegimeCalc.taxable_income);
-            console.log('  - Total Liability:', oldRegimeCalc.total_liability);
-            console.log('  - TDS Paid:', oldRegimeCalc.tds_paid);
-            console.log('  - Additional Tax:', oldRegimeCalc.additional_tax_payable);
-            console.log('  - Refund Due:', oldRegimeCalc.refund_due);
-            
-            console.log('New Regime Calculation:', newRegimeCalc);
-            console.log('  - Taxable Income:', newRegimeCalc.taxable_income);
-            console.log('  - Total Liability:', newRegimeCalc.total_liability);
-            console.log('  - TDS Paid:', newRegimeCalc.tds_paid);
-            console.log('  - Additional Tax:', newRegimeCalc.additional_tax_payable);
-            console.log('  - Refund Due:', newRegimeCalc.refund_due);
-            
-            // Deductions
-            const deductionsOld = backendResults.deductions_old_regime || {};
-            const deductionsNew = backendResults.deductions_new_regime || {};
-            console.log('Old Regime Deductions:', deductionsOld);
-            console.log('New Regime Deductions:', deductionsNew);
-            
-            // Gross income
-            console.log('Gross Total Income:', backendResults.gross_total_income);
-            
-            console.log('=== END DEBUG ===');
-            
-            // Update debug panel
-            updateDebugPanel(JSON.stringify(backendResults, null, 2));
-        }
+        
 
-        function toggleDebugPanel() {
-            const panel = document.getElementById('debugPanel');
-            if (panel.style.display === 'none') {
-                panel.style.display = 'block';
-                if (backendResults) {
-                    updateDebugPanel(JSON.stringify(backendResults, null, 2));
-                }
-            } else {
-                panel.style.display = 'none';
-            }
-        }
-
-        function updateDebugPanel(content) {
-            const debugContent = document.getElementById('debugContent');
-            if (debugContent) {
-                debugContent.textContent = content;
-            }
-        }
+        
 
         function displayReportData() {
             console.log('=== DISPLAY REPORT DATA CALLED ===');
@@ -1285,7 +1205,8 @@
             const element = document.getElementById(elementId);
             if (element) {
                 element.setAttribute('data-amount', value);
-                element.textContent = '₹' + value.toLocaleString('en-IN');
+                element.setAttribute('data-original-value', '₹' + value.toLocaleString('en-IN'));
+                element.textContent = isPrivacyMode ? '₹XX,XX,XXX' : '₹' + value.toLocaleString('en-IN');
             }
         }
 
