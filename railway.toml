@@ -1,17 +1,40 @@
 [build]
 builder = "dockerfile"
-dockerfilePath = "incometax_project/Dockerfile"
+dockerfilePath = "incometax_project/Dockerfile.with-ollama"
 
 [deploy]
-healthcheckPath = "/api/health/"
-healthcheckTimeout = 300
-restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 3
+# Full stack deployment - Force rebuild v2
+startCommand = "/app/start-with-ollama-improved.sh"
+healthcheckPath = "/"
+healthcheckTimeout = 90
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 5
 
 [env]
-# Railway will automatically inject these
-# DATABASE_URL - PostgreSQL provided by Railway
-# REDIS_URL - Redis provided by Railway
-PORT = 8000
-DEBUG = false
-ALLOWED_HOSTS = "*.railway.app,*.up.railway.app"
+# Django Configuration (Railway Minimal)
+DJANGO_SETTINGS_MODULE = "incometax_project.settings_production"
+PYTHONUNBUFFERED = "1"
+PYTHONDONTWRITEBYTECODE = "1" 
+DEBUG = "true"
+
+# Security (Development mode for now)
+SECRET_KEY = "railway-deployment-debug-key-change-in-production"
+ALLOWED_HOSTS = "*.railway.app,*.up.railway.app,localhost,127.0.0.1"
+
+# Database (SQLite for minimal deployment)
+# DATABASE_URL will be provided by Railway PostgreSQL service
+
+# Privacy Engine (Disabled for minimal deployment)
+PRIVACY_ENGINE_ENABLED = "true"
+
+# Ollama Configuration (Railway Pro - Embedded Qwen Model)
+OLLAMA_BASE_URL = "http://localhost:11434"
+OLLAMA_MODEL = "qwen3:1.7b"
+OLLAMA_TIMEOUT = "300"
+AI_PROCESSING_ENABLED = "true"
+
+# Railway Optimizations
+RAILWAY_DEPLOYMENT_MODE = "ollama_production"
+
+[experimental]
+nixpacks = false

@@ -2,22 +2,116 @@ import nltk
 nltk.download('punkt')
 
 from celery import shared_task
-from documents.models import ProcessingSession, Document, AnalysisTask, AnalysisResult
+from doc_engine.models import ProcessingSession, Document, AnalysisTask, AnalysisResult
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from src.main import IncomeTaxAssistant
 from src.core.document_processing.ollama_analyzer import OllamaDocumentAnalyzer
+
+# Only Ollama analyzer is used now
 from api.utils.tax_engine import IncomeTaxCalculator, DeductionCalculator
 from api.utils.pii_logger import get_pii_safe_logger, log_document_processing, log_document_error
 import dataclasses
 import os
+
+def get_document_analyzer(encryption_key=None):
+    """
+    Get the Ollama document analyzer - now the only supported analyzer
+    """
+    logger = get_pii_safe_logger(__name__)
+    logger.info("🤖 Using Ollama analyzer")
+    return OllamaDocumentAnalyzer(encryption_key=encryption_key)
 import gc
 import tempfile
 import shutil
 import time
+import sys
+import psutil
+from datetime import datetime
 from django.utils import timezone
 from django.conf import settings  
 from contextlib import contextmanager
+
+def get_memory_usage():
+    """Get current memory usage in MB"""
+    try:
+        process = psutil.Process()
+        return f"{process.memory_info().rss / 1024 / 1024:.1f}MB"
+    except:
+        return "unknown"
+
+def get_available_memory():
+    """Get available system memory in MB"""  
+    try:
+        return f"{psutil.virtual_memory().available / 1024 / 1024:.1f}MB"
+    except:
+        return "unknown"
+
+@shared_task(bind=True)
+def test_celery_connection(self):
+    """Enhanced test task to verify Celery is working with detailed debugging"""
+    logger = get_pii_safe_logger(__name__)
+    
+    try:
+        logger.info("🧪 CELERY TEST TASK EXECUTION START")
+        logger.info(f"   Task ID: {self.request.id}")
+        logger.info(f"   Task name: {self.request.task}")
+        logger.info(f"   Worker hostname: {self.request.hostname}")
+        logger.info(f"   Current time: {datetime.now()}")
+        
+        # Test database access
+        logger.info("🔍 Testing database access...")
+        try:
+            from django.conf import settings
+            logger.info(f"   Settings loaded: {hasattr(settings, 'DATABASES')}")
+            logger.info(f"   Database engine: {settings.DATABASES['default']['ENGINE']}")
+            
+            # Test actual database query
+            from doc_engine.models import ProcessingSession
+            session_count = ProcessingSession.objects.count()
+            logger.info(f"   ✅ Database query successful: {session_count} sessions")
+            
+        except Exception as db_error:
+            logger.error(f"   ❌ Database access failed: {db_error}")
+            import traceback
+            logger.error(f"   Database traceback: {traceback.format_exc()}")
+        
+        # Test imports
+        logger.info("🔍 Testing critical imports...")
+        try:
+            from src.core.document_processing.ollama_analyzer import OllamaDocumentAnalyzer
+            logger.info("   ✅ OllamaDocumentAnalyzer import successful")
+        except Exception as import_error:
+            logger.error(f"   ❌ OllamaDocumentAnalyzer import failed: {import_error}")
+            import traceback
+            logger.error(f"   Import traceback: {traceback.format_exc()}")
+        
+        # Test Ollama connectivity from within task
+        logger.info("🔍 Testing Ollama from Celery worker...")
+        try:
+            import requests
+            ollama_response = requests.get("http://localhost:11434/api/tags", timeout=5)
+            if ollama_response.status_code == 200:
+                models = ollama_response.json().get('models', [])
+                logger.info(f"   ✅ Ollama accessible from worker: {len(models)} models")
+            else:
+                logger.error(f"   ❌ Ollama responded with status: {ollama_response.status_code}")
+        except Exception as ollama_error:
+            logger.error(f"   ❌ Ollama connection failed from worker: {ollama_error}")
+        
+        logger.info("✅ CELERY TEST TASK COMPLETED SUCCESSFULLY")
+        return {
+            "status": "success", 
+            "message": "Celery worker is functioning correctly",
+            "task_id": str(self.request.id),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ CELERY TEST TASK FAILED: {e}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        raise e
 
 def _convert_ollama_data_to_expected_format(ollama_data, filename):
     """Convert OllamaExtractedData to our expected format"""
@@ -112,7 +206,7 @@ def _convert_ollama_data_to_expected_format(ollama_data, filename):
             }
         }
 
-@shared_task(bind=True, time_limit=600, soft_time_limit=480)  # Reduced from 40/30 min to 10/8 min
+@shared_task(bind=True, time_limit=600, soft_time_limit=480, autoretry_for=(Exception,), retry_kwargs={'max_retries': 0})
 def process_single_document(self, session_id, document_id, encryption_key=None):
     """
     Process a single document - can be picked up by any available worker
@@ -120,9 +214,64 @@ def process_single_document(self, session_id, document_id, encryption_key=None):
         session_id: The session UUID
         document_id: The document UUID 
     """
+    # Initialize logger with error handling
     try:
+        logger = get_pii_safe_logger(__name__)
+    except Exception as e:
+        # Fallback to basic logging if PII logger fails
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"PII logger initialization failed: {e}")
+    
+    # Log task startup with maximum detail
+    try:
+        logger.info(f"🔧 CELERY TASK STARTED: process_single_document")
+        logger.info(f"   Task ID: {self.request.id}")
+        logger.info(f"   Task name: {self.request.task}")
+        logger.info(f"   Worker hostname: {self.request.hostname}")
+        logger.info(f"   Worker PID: {os.getpid()}")
+        logger.info(f"   Session ID: {session_id}")
+        logger.info(f"   Document ID: {document_id}")
+        logger.info(f"   Encryption key provided: {encryption_key is not None}")
+        logger.info(f"   Current time: {datetime.now()}")
+        logger.info(f"   Memory usage: {get_memory_usage()}")
+        
+        # Add early checkpoint to verify task is running
+        logger.info(f"✅ CHECKPOINT 1: Task execution started successfully")
+        
+        # Log environment info
+        logger.info(f"🔍 ENVIRONMENT CHECK")
+        logger.info(f"   Python version: {sys.version}")
+        logger.info(f"   Django settings module: {os.environ.get('DJANGO_SETTINGS_MODULE')}")
+        logger.info(f"   Current working directory: {os.getcwd()}")
+        logger.info(f"   Available memory: {get_available_memory()}")
+        
+    except Exception as e:
+        # Even basic logging failed - use print as last resort
+        print(f"CRITICAL: Logging failed in process_single_document: {e}")
+        print(f"Task starting with session_id: {session_id}, document_id: {document_id}")
+        import traceback
+        traceback.print_exc()
+    
+    try:
+        logger.info(f"✅ CHECKPOINT 2: About to query database")
         session = ProcessingSession.objects.get(pk=session_id)
+        logger.info(f"✅ CHECKPOINT 3: Session found - {session.pk}")
         document = Document.objects.get(pk=document_id, session=session)
+        logger.info(f"✅ CHECKPOINT 4: Document found - {document.filename}")
+        
+        logger.info(f"📄 DOCUMENT FOUND: {document.filename}")
+        logger.info(f"   File field: {document.file.name}")
+        logger.info(f"   Current status: {document.status}")
+        
+        # Test file accessibility in Celery worker
+        try:
+            with document.file.open('rb') as f:
+                test_read = f.read(100)
+                logger.info(f"   ✅ File accessible in Celery worker: {len(test_read)} bytes read")
+        except Exception as e:
+            logger.error(f"   ❌ File NOT accessible in Celery worker: {e}")
+            raise Exception(f"Cannot access file in Celery worker: {e}")
         
         # Update document status to processing
         document.status = Document.Status.PROCESSING
