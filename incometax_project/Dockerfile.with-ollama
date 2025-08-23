@@ -1,0 +1,117 @@
+# TaxSahaj with Ollama Dockerfile for Railway
+# This includes Ollama in the same container (larger image but self-contained)
+FROM python:3.10-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies including Ollama requirements
+RUN apt-get update && apt-get install -y \
+    libpq5 \
+    curl \
+    gcc \
+    libpq-dev \
+    libgl1 \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    libgthread-2.0-0 \
+    libgtk-3-0 \
+    wget \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Install Ollama
+RUN curl -fsSL https://ollama.com/install.sh | sh
+
+# Set work directory
+WORKDIR /app
+RUN mkdir -p /app/static /app/media /app/logs /app/data/media
+
+# Copy and install requirements
+COPY incometax_project/requirements-production.txt /app/requirements.txt
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy Django project
+COPY incometax_project/manage.py /app/
+COPY incometax_project/incometax_project/ /app/incometax_project/
+COPY incometax_project /app_full/
+
+# Copy TaxSahaj applications
+RUN echo "=== Copying TaxSahaj applications ===" && \
+    [ -d /app_full/api ] && cp -r /app_full/api /app/ || echo "api directory missing" && \
+    [ -d /app_full/doc_engine ] && cp -r /app_full/doc_engine /app/ || echo "doc_engine directory missing" && \
+    [ -d /app_full/analysis ] && cp -r /app_full/analysis /app/ || echo "analysis directory missing" && \
+    [ -d /app_full/privacy_engine ] && cp -r /app_full/privacy_engine /app/ || echo "privacy_engine directory missing" && \
+    [ -d /app_full/src ] && cp -r /app_full/src /app/ || echo "src directory missing" && \
+    rm -rf /app_full
+
+# Environment variables
+ENV PORT=8000
+ENV DJANGO_SETTINGS_MODULE=incometax_project.settings_production
+ENV OLLAMA_BASE_URL=http://localhost:11434
+ENV OLLAMA_MODEL=qwen3:1.7b
+
+# Expose ports
+EXPOSE 8000
+EXPOSE 11434
+
+# Create startup script with Ollama
+RUN echo '#!/bin/bash\n\
+set -e\n\
+echo "🚀 TaxSahaj + Ollama Startup"\n\
+export DJANGO_SETTINGS_MODULE=incometax_project.settings_production\n\
+\n\
+# Start Ollama server in background\n\
+echo "🤖 Starting Ollama server..."\n\
+ollama serve &\n\
+OLLAMA_PID=$!\n\
+echo "Ollama PID: $OLLAMA_PID"\n\
+\n\
+# Wait for Ollama to be ready\n\
+echo "⏳ Waiting for Ollama to be ready..."\n\
+for i in {1..30}; do\n\
+  if curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then\n\
+    echo "✅ Ollama is ready"\n\
+    break\n\
+  fi\n\
+  echo "Waiting... ($i/30)"\n\
+  sleep 2\n\
+done\n\
+\n\
+# Pull the required model\n\
+echo "📥 Pulling model: $OLLAMA_MODEL"\n\
+ollama pull $OLLAMA_MODEL || echo "⚠️ Failed to pull model - will try during runtime"\n\
+\n\
+# Setup Django\n\
+echo "📁 Setting up persistent storage..."\n\
+mkdir -p /app/data/media\n\
+echo "🔧 Running migrations..."\n\
+python manage.py migrate --noinput\n\
+echo "📦 Collecting static files..."\n\
+python manage.py collectstatic --noinput\n\
+echo "🧹 Cleaning up orphaned documents..."\n\
+python manage.py cleanup_documents || echo "⚠️ Cleanup failed"\n\
+echo "🔄 Flushing Redis cache..."\n\
+python manage.py shell -c "from django.core.cache import cache; cache.clear(); print(\\"✅ Redis cleared\\")" || echo "⚠️ Redis flush failed"\n\
+\n\
+# Start Celery worker\n\
+echo "🚀 Starting Celery worker..."\n\
+celery -A incometax_project worker --loglevel=info --concurrency=2 --pool=prefork &\n\
+\n\
+# Start Django server\n\
+PORT=${PORT:-8000}\n\
+echo "🚀 Starting Django server on port $PORT"\n\
+exec gunicorn incometax_project.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120 --access-logfile - --error-logfile -\n\
+' > /app/start-with-ollama.sh && chmod +x /app/start-with-ollama.sh
+
+# Copy the improved startup script
+COPY incometax_project/start-with-ollama-improved.sh /app/start-with-ollama-improved.sh
+RUN chmod +x /app/start-with-ollama-improved.sh
+
+# Default command
+CMD ["/app/start-with-ollama-improved.sh"]
